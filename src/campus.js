@@ -47,6 +47,7 @@ export function buildCampus(data, yAt, materials) {
 
   const ground = buildGround(data, yAt);
   group.add(ground.mesh);
+  if (ground.tufts) group.add(ground.tufts);
 
   addSlabs(group, data.water, yAt, materials.water, 0.06);
   addSlabs(group, data.plazas, yAt, materials.concrete, 0.05);

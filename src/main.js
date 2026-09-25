@@ -19,9 +19,9 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPrefere
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, window.innerWidth < 800 ? 1.25 : 1.75));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.14;
+renderer.toneMappingExposure = 1.08;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const labelRenderer = new CSS2DRenderer();
@@ -30,8 +30,8 @@ labelRenderer.domElement.className = 'label-layer';
 document.getElementById('app').appendChild(labelRenderer.domElement);
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0xc5e6f8, 0.00004);
-scene.background = new THREE.Color(0x8ec8f0);
+scene.fog = new THREE.FogExp2(0xd7e6f4, 0.00013);
+scene.background = new THREE.Color(0xd5e4f2);
 
 const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.35, 5000);
 camera.position.set(40, 420, 380);
@@ -44,22 +44,26 @@ controls.minDistance = 6;
 controls.maxDistance = 2200;
 controls.target.set(0, 8, 0);
 
-const hemi = new THREE.HemisphereLight(0xd7ecff, 0x3c7a34, 0.7);
+const hemi = new THREE.HemisphereLight(0xd7ecff, 0x2a5a30, 0.85);
 scene.add(hemi);
-const sun = new THREE.DirectionalLight(0xfff3e4, 2.5);
+const sun = new THREE.DirectionalLight(0xfff3e4, 2.1);
 sun.castShadow = true;
 sun.shadow.mapSize.set(window.innerWidth < 800 ? 1024 : 2048, window.innerWidth < 800 ? 1024 : 2048);
 sun.shadow.camera.near = 8;
 sun.shadow.camera.far = 1400;
-sun.shadow.bias = -0.00025;
-sun.shadow.normalBias = 0.035;
+sun.shadow.bias = -0.00045;
+sun.shadow.normalBias = 0.05;
+sun.shadow.radius = 3.5;
+const fill = new THREE.DirectionalLight(0xd5e4f4, 0.42);
+fill.position.set(-380, 240, -260);
+scene.add(fill);
 fitShadow(controls.target, 220);
 scene.add(sun);
 scene.add(sun.target);
 
 const sunDir = new THREE.Vector3();
-const dayZenith = new THREE.Color(0x3c86d4);
-const dayHorizon = new THREE.Color(0xc5dff6);
+const dayZenith = new THREE.Color(0x7eb6e6);
+const dayHorizon = new THREE.Color(0xe7f2fb);
 const nightZenith = new THREE.Color(0x070b12);
 const nightHorizon = new THREE.Color(0x1a2230);
 const warm = new THREE.Color(0xffb57a);
@@ -91,9 +95,10 @@ function makeEnv(gl) {
   c.height = 32;
   const g = c.getContext('2d');
   const grd = g.createLinearGradient(0, 0, 0, 32);
-  grd.addColorStop(0, '#3c86d4');
-  grd.addColorStop(0.52, '#b7d6f2');
-  grd.addColorStop(1, '#d9cbb6');
+  grd.addColorStop(0, '#7eb6e6');
+  grd.addColorStop(0.42, '#d5e6f6');
+  grd.addColorStop(0.74, '#e7f1fb');
+  grd.addColorStop(1, '#c5d4bc');
   g.fillStyle = grd;
   g.fillRect(0, 0, 64, 32);
   const tex = new THREE.CanvasTexture(c);
@@ -149,15 +154,45 @@ function createSky() {
       uniform mat4 uInvProj;
       uniform mat4 uCamWorld;
       varying vec2 vNdc;
+      float hash(vec2 p) {
+        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+      }
+      float noise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        float a = hash(i);
+        float b = hash(i + vec2(1.0, 0.0));
+        float c = hash(i + vec2(0.0, 1.0));
+        float d = hash(i + vec2(1.0, 1.0));
+        return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+      }
+      float fbm(vec2 p) {
+        float v = 0.0;
+        float a = 0.5;
+        for (int i = 0; i < 4; i++) {
+          v += a * noise(p);
+          p = p * 2.05 + vec2(1.7, 9.2);
+          a *= 0.5;
+        }
+        return v;
+      }
       void main() {
         vec4 far = uInvProj * vec4(vNdc, 1.0, 1.0);
         vec3 dir = normalize(mat3(uCamWorld) * (far.xyz / far.w));
-        float h = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
-        vec3 col = mix(uHorizon, uZenith, pow(h, 0.85));
+        float elev = clamp(dir.y, 0.0, 1.0);
+        float h = pow(elev, 0.52);
+        vec3 col = mix(uHorizon, uZenith, h);
+        float dust = exp(-elev * 8.0);
+        col = mix(col, uGlow, dust * 0.16 * uDay);
+        float skyMask = smoothstep(0.015, 0.16, dir.y);
+        vec2 cuv = dir.xz / (dir.y + 0.22);
+        float cloud = smoothstep(0.46, 0.74, fbm(cuv * 1.55));
+        col = mix(col, vec3(0.95, 0.96, 0.97), cloud * 0.78 * skyMask * uDay);
         float sun = pow(max(dot(dir, uSunDir), 0.0), 90.0);
-        col += uGlow * sun * (0.25 + 0.45 * uDay);
+        col += uGlow * sun * (0.22 + 0.4 * uDay);
         float stars = step(0.9975, fract(sin(dot(floor(dir * 700.0), vec3(12.9, 78.2, 37.7))) * 43758.5));
-        col += vec3(0.85) * stars * smoothstep(0.45, 0.8, h) * (1.0 - uDay);
+        col += vec3(0.85) * stars * smoothstep(0.45, 0.8, elev) * (1.0 - uDay);
         gl_FragColor = vec4(col, 1.0);
       }
     `,
@@ -185,9 +220,10 @@ function applyHour(next) {
   fitShadow(anchor, span);
   sun.position.copy(anchor).addScaledVector(sunDir, THREE.MathUtils.clamp(span, 70, 480) * 2.4);
   sun.target.position.copy(anchor);
-  sun.intensity = 0.06 + 3.35 * day;
+  sun.intensity = 0.05 + 2.05 * day;
   sun.color.copy(warm).lerp(sunNoon, 1 - sunset);
-  hemi.intensity = 0.08 + 0.38 * day;
+  hemi.intensity = 0.16 + 0.72 * day;
+  fill.intensity = 0.1 + 0.46 * day;
   hemi.color.copy(nightHorizon).lerp(dayHorizon, day);
   sky.uniforms.uSunDir.value.copy(sunDir);
   sky.uniforms.uDay.value = day;

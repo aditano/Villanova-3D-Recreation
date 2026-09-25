@@ -35,61 +35,68 @@ function sampleWear(wear, x, z) {
   };
 }
 
-/** Mottling only. The material color is the saturated green, so a missing bind cannot turn the lawn blue. */
+/** Soft multi-scale blotches. No directional strokes — those tile at walk distance. */
 function grassMaps() {
   const size = 512;
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#f2f6ee';
+  ctx.fillStyle = '#d7e6c8';
   ctx.fillRect(0, 0, size, size);
-  for (let i = 0; i < 1600; i++) {
-    const x = Math.random() * size;
-    const y = Math.random() * size;
-    const rx = 10 + Math.random() * 42;
-    const ry = rx * (0.45 + Math.random() * 0.7);
-    const g = 150 + Math.floor(Math.random() * 90);
-    const r = 90 + Math.floor(Math.random() * 50);
-    ctx.fillStyle = `rgba(${r},${g},${70 + Math.floor(Math.random() * 40)},${0.18 + Math.random() * 0.4})`;
-    ctx.beginPath();
-    ctx.ellipse(x, y, rx, ry, Math.random() * Math.PI, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  for (let i = 0; i < 700; i++) {
-    ctx.fillStyle = `rgba(${150 + Math.floor(Math.random() * 50)},${120 + Math.floor(Math.random() * 30)},${60},${0.15 + Math.random() * 0.25})`;
-    ctx.fillRect(Math.random() * size, Math.random() * size, 2 + Math.random() * 6, 2 + Math.random() * 4);
-  }
-  ctx.strokeStyle = 'rgba(40,90,36,0.45)';
-  ctx.lineWidth = 1;
-  for (let i = 0; i < 2800; i++) {
-    const x = Math.random() * size;
-    const y = Math.random() * size;
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(x + (Math.random() - 0.5) * 3, y - 5 - Math.random() * 8);
-    ctx.stroke();
-  }
+  const blot = (count, minR, maxR, alpha) => {
+    for (let i = 0; i < count; i++) {
+      const x = Math.random() * size;
+      const y = Math.random() * size;
+      const rx = minR + Math.random() * (maxR - minR);
+      const ry = rx * (0.55 + Math.random() * 0.9);
+      const g = 120 + Math.floor(Math.random() * 110);
+      const r = 50 + Math.floor(Math.random() * 70);
+      const b = 40 + Math.floor(Math.random() * 40);
+      ctx.fillStyle = `rgba(${r},${g},${b},${alpha * (0.55 + Math.random() * 0.45)})`;
+      ctx.beginPath();
+      ctx.ellipse(x, y, rx, ry, Math.random() * Math.PI, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  };
+  blot(28, 90, 220, 0.35);
+  blot(80, 28, 80, 0.4);
+  blot(220, 8, 24, 0.45);
   const map = new THREE.CanvasTexture(canvas);
   map.colorSpace = THREE.SRGBColorSpace;
   map.wrapS = THREE.RepeatWrapping;
   map.wrapT = THREE.RepeatWrapping;
   map.anisotropy = 8;
 
+  const nSize = 256;
   const ncan = document.createElement('canvas');
-  ncan.width = 256;
-  ncan.height = 256;
+  ncan.width = nSize;
+  ncan.height = nSize;
   const nctx = ncan.getContext('2d');
-  const img = nctx.createImageData(256, 256);
-  const h = (nx, ny) => Math.sin(nx * 0.71) * Math.cos(ny * 0.53) * 0.6 + Math.sin(nx * 3.1 + ny * 2.2) * 0.4;
-  for (let y = 0; y < 256; y++) {
-    for (let x = 0; x < 256; x++) {
-      const dx = h(x + 1, y) - h(x - 1, y);
-      const dy = h(x, y + 1) - h(x, y - 1);
-      const i = (y * 256 + x) * 4;
-      img.data[i] = Math.max(0, Math.min(255, 128 - dx * 42));
-      img.data[i + 1] = Math.max(0, Math.min(255, 128 - dy * 42));
-      img.data[i + 2] = 255;
+  const img = nctx.createImageData(nSize, nSize);
+  const hgt = new Float32Array(nSize * nSize);
+  for (let y = 0; y < nSize; y++) {
+    for (let x = 0; x < nSize; x++) {
+      const nx = x / nSize;
+      const ny = y / nSize;
+      hgt[y * nSize + x] =
+        Math.sin(nx * 18.0) * Math.cos(ny * 14.0) * 0.35 +
+        Math.sin(nx * 47.0 + ny * 31.0) * 0.4 +
+        Math.sin(nx * 9.0 + 2.0) * Math.sin(ny * 7.0) * 0.45;
+    }
+  }
+  for (let y = 0; y < nSize; y++) {
+    for (let x = 0; x < nSize; x++) {
+      const hl = hgt[y * nSize + ((x - 1 + nSize) % nSize)];
+      const hr = hgt[y * nSize + ((x + 1) % nSize)];
+      const hd = hgt[((y + 1) % nSize) * nSize + x];
+      const hu = hgt[((y - 1 + nSize) % nSize) * nSize + x];
+      const dx = (hl - hr) * 3.2;
+      const dy = (hd - hu) * 3.2;
+      const i = (y * nSize + x) * 4;
+      img.data[i] = Math.max(0, Math.min(255, 128 + dx * 70));
+      img.data[i + 1] = Math.max(0, Math.min(255, 128 + dy * 70));
+      img.data[i + 2] = 210;
       img.data[i + 3] = 255;
     }
   }
@@ -98,6 +105,30 @@ function grassMaps() {
   normalMap.wrapS = THREE.RepeatWrapping;
   normalMap.wrapT = THREE.RepeatWrapping;
   return { map, normalMap };
+}
+
+function grassCardTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, 64, 128);
+  for (let i = 0; i < 18; i++) {
+    const x = 6 + (i / 17) * 52;
+    const lean = (i % 2 === 0 ? 1 : -1) * (4 + (i % 4));
+    const g = 90 + (i % 5) * 22;
+    ctx.strokeStyle = `rgba(${28 + (i % 3) * 12},${g},${24 + (i % 4) * 8},0.92)`;
+    ctx.lineWidth = i % 3 === 0 ? 2.2 : 1.3;
+    ctx.beginPath();
+    ctx.moveTo(x, 126);
+    ctx.quadraticCurveTo(x + lean * 0.4, 70, x + lean, 6 + (i % 5) * 4);
+    ctx.stroke();
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  return tex;
 }
 
 function openRing(ring) {
@@ -247,11 +278,11 @@ export function buildWearMap(data) {
         if (inside) {
           pixels[i + 3] = 255;
           pixels[i + 2] = Math.max(pixels[i + 2], 40);
-        } else if (dist < 7) {
-          const ao = Math.round((1 - dist / 7) * 210);
+        } else if (dist < 10) {
+          const ao = Math.round(Math.pow(1 - dist / 10, 1.35) * 245);
           pixels[i + 2] = Math.max(pixels[i + 2], ao);
-          if (dist < 2.4) pixels[i + 1] = Math.max(pixels[i + 1], Math.round((1 - dist / 2.4) * 120));
-          if (dist < 1.2) pixels[i + 3] = Math.max(pixels[i + 3], 180);
+          if (dist < 2.8) pixels[i + 1] = Math.max(pixels[i + 1], Math.round((1 - dist / 2.8) * 140));
+          if (dist < 1.4) pixels[i + 3] = Math.max(pixels[i + 3], 200);
         }
       }
     }
@@ -322,16 +353,22 @@ export function buildGround(data, yAt) {
       const i = (row * fCols + col) * 3;
       const wearS = sampleWear(wear, x, z);
       const flatten = Math.min(1, Math.max(wearS.pavement, wearS.flat));
-      const patch = noise2(x * 0.04, z * 0.04);
-      const fine = noise2(x * 0.16, z * 0.14);
-      let tint = [0.82 + patch * 0.3, 0.92 + fine * 0.16, 0.76 + (1 - patch) * 0.14];
+      const broad = noise2(x * 0.011, z * 0.01);
+      const patch = noise2(x * 0.042, z * 0.038);
+      const mid = noise2(x * 0.12, z * 0.11);
+      const fine = noise2(x * 0.33, z * 0.29);
+      let tint = [
+        0.7 + broad * 0.28 + patch * 0.16,
+        0.84 + mid * 0.2 + fine * 0.1,
+        0.58 + (1 - broad) * 0.16,
+      ];
       let inGreen = false;
       for (const layer of layers) {
         if (!pointInPoly(x, z, layer.f)) continue;
         inGreen = true;
         if (layer.kind === 'wood') tint = [0.58, 0.74, 0.55];
         else if (layer.kind === 'garden') tint = [0.95, 1.08, 0.86];
-        else tint = [0.9 + patch * 0.18, 1.02 + fine * 0.1, 0.82];
+        else tint = [0.78 + broad * 0.22 + patch * 0.12, 0.98 + mid * 0.14, 0.7 + (1 - patch) * 0.1];
       }
       if (!inGreen) {
         tint[0] *= 0.88;
@@ -342,7 +379,7 @@ export function buildGround(data, yAt) {
       tint[0] = tint[0] * (1 - dirt) + 1.08 * dirt;
       tint[1] = tint[1] * (1 - dirt) + 0.7 * dirt;
       tint[2] = tint[2] * (1 - dirt) + 0.38 * dirt;
-      const shade = 1 - wearS.ao * 0.45;
+      const shade = 1 - wearS.ao * 0.68;
       tint[0] *= shade;
       tint[1] *= shade;
       tint[2] *= shade;
@@ -354,15 +391,15 @@ export function buildGround(data, yAt) {
           tint[2] * (1 - p) + 0.18 * p,
         ];
       }
-      const bump = (patch * 0.62 + fine * 0.38 - 0.48) * 0.2 * (1 - flatten);
+      const bump = (broad * 0.45 + patch * 0.35 + mid * 0.2 - 0.5) * 0.34 * (1 - flatten);
       positions[i] = x;
       positions[i + 1] = yAt(x, z) + bump;
       positions[i + 2] = z;
       colors[i] = tint[0];
       colors[i + 1] = tint[1];
       colors[i + 2] = tint[2];
-      uvs[(row * fCols + col) * 2] = x / 5.5;
-      uvs[(row * fCols + col) * 2 + 1] = z / 5.5;
+      uvs[(row * fCols + col) * 2] = x / 16;
+      uvs[(row * fCols + col) * 2 + 1] = z / 16;
     }
   }
   const indices = [];
@@ -392,10 +429,109 @@ export function buildGround(data, yAt) {
     envMapIntensity: 0,
     vertexColors: true,
   });
-  material.normalScale = new THREE.Vector2(0.85, 0.85);
+  material.normalScale = new THREE.Vector2(1.25, 1.25);
 
   const mesh = new THREE.Mesh(geo, material);
   mesh.receiveShadow = true;
   mesh.name = 'terrain';
-  return { mesh, wear };
+  const tufts = buildTufts(data, yAt, wear);
+  return { mesh, wear, tufts };
+}
+
+function buildTufts(data, yAt, wear) {
+  const buildings = data.buildings || [];
+  const pads = [];
+  for (const b of buildings) {
+    if (!b.f || b.f.length < 4) continue;
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (const [x, z] of b.f) {
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minZ = Math.min(minZ, z);
+      maxZ = Math.max(maxZ, z);
+    }
+    pads.push({ f: b.f, minX, maxX, minZ, maxZ });
+  }
+  const blocked = (x, z) => {
+    for (const pad of pads) {
+      if (x < pad.minX || x > pad.maxX || z < pad.minZ || z > pad.maxZ) continue;
+      if (pointInPoly(x, z, pad.f)) return true;
+    }
+    return false;
+  };
+  const items = [];
+  const minX = -70;
+  const maxX = 260;
+  const minZ = -40;
+  const maxZ = 240;
+  const step = 2.55;
+  for (let x = minX; x <= maxX && items.length < 3800; x += step) {
+    for (let z = minZ; z <= maxZ && items.length < 3800; z += step) {
+      const jx = x + (hash2(x, z) - 0.5) * step * 0.85;
+      const jz = z + (hash2(z + 4, x) - 0.5) * step * 0.85;
+      if (Math.abs(jx) < 15 && jz > -8 && jz < 76) continue;
+      const wearS = sampleWear(wear, jx, jz);
+      if (wearS.pavement > 0.32 || wearS.flat > 0.5 || wearS.path > 0.5) continue;
+      if (blocked(jx, jz)) continue;
+      const h = 0.42 + hash2(jx + 1.7, jz) * 0.48;
+      items.push({
+        x: jx,
+        y: yAt(jx, jz) + 0.02,
+        z: jz,
+        sx: 0.75 + hash2(jz, jx) * 0.45,
+        sy: h,
+        sz: 1,
+        yaw: hash2(jx, jz + 2) * Math.PI,
+      });
+    }
+  }
+  const geo = new THREE.PlaneGeometry(0.62, 1, 1, 3);
+  geo.translate(0, 0.5, 0);
+  const colors = [];
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i);
+    const k = 0.45 + y * 0.85;
+    colors.push(0.72 * k, k, 0.48 * k);
+  }
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  const mat = new THREE.MeshStandardMaterial({
+    map: grassCardTexture(),
+    color: 0x3c9a3c,
+    roughness: 1,
+    metalness: 0,
+    alphaTest: 0.35,
+    side: THREE.DoubleSide,
+    vertexColors: true,
+    envMapIntensity: 0,
+  });
+  const group = new THREE.Group();
+  group.name = 'tufts';
+  const place = (yawOffset) => {
+    const mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, items.length));
+    mesh.count = items.length;
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const s = new THREE.Vector3();
+    const p = new THREE.Vector3();
+    const up = new THREE.Vector3(0, 1, 0);
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      p.set(it.x, it.y, it.z);
+      q.setFromAxisAngle(up, it.yaw + yawOffset);
+      s.set(it.sx, it.sy, it.sz);
+      m.compose(p, q, s);
+      mesh.setMatrixAt(i, m);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    group.add(mesh);
+  };
+  place(0);
+  place(Math.PI / 2);
+  return group;
 }

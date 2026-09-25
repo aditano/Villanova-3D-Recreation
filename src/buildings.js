@@ -84,65 +84,96 @@ function shadeWalls(buf, edges, y0, y1, spec) {
 }
 
 function collectWindows(edge, y0, y1, spec, acc, stride) {
-  if (edge.len < 2.3 || acc.glass.length > 8600) return;
+  if (edge.len < 2.3 || acc.glass.length > 11000) return;
   const floors = Math.max(1, Math.floor((y1 - y0) / spec.floor + 0.2));
   const bays = Math.max(1, Math.floor(edge.len / spec.bay));
   const step = Math.max(1, stride | 0);
+  const pointed = !!spec.pointed;
   for (let f = 0; f < floors; f++) {
     const base = y0 + f * spec.floor;
-    if (base + spec.floor * 0.78 > y1 + 0.08) break;
-    const gw = Math.min(spec.bay * spec.winW, edge.len * 0.78);
-    const gh = spec.floor * 0.4;
-    const gy = base + spec.floor * 0.56;
-    const sillY = base + spec.floor * 0.3;
-    const headY = base + spec.floor * 0.8;
+    if (base + spec.floor * 0.84 > y1 + 0.08) break;
+    const gw = Math.min(spec.bay * spec.winW, edge.len * 0.72);
+    const gh = spec.floor * (pointed ? 0.62 : 0.5);
+    const gy = base + spec.floor * (pointed ? 0.56 : 0.52);
+    const sillY = base + spec.floor * (pointed ? 0.2 : 0.24);
+    const headY = gy + gh * 0.5 + 0.1;
     for (let bay = 0; bay < bays; bay += step) {
+      if (acc.glass.length > 11000) return;
       const t = (bay + 0.5) / bays;
       const along = t * edge.len;
-      if (along < 0.45 || edge.len - along < 0.45) continue;
-      const x = edge.ax + edge.dx * along + edge.nx * 0.04;
-      const z = edge.az + edge.dz * along + edge.nz * 0.04;
+      if (along < 0.7 || edge.len - along < 0.7) continue;
+      const x = edge.ax + edge.dx * along + edge.nx * 0.02;
+      const z = edge.az + edge.dz * along + edge.nz * 0.02;
       const yaw = Math.atan2(edge.nx, edge.nz);
+      const out = 0.52;
       acc.glass.push({
-        x: x - edge.nx * 0.1,
+        x: x - edge.nx * 0.28,
         y: gy,
-        z: z - edge.nz * 0.1,
+        z: z - edge.nz * 0.28,
         yaw,
-        sx: gw * 0.82,
+        sx: gw * 0.76,
         sy: gh * 0.9,
-        sz: 0.18,
+        sz: 0.12,
       });
       acc.sill.push({
-        x: x + edge.nx * 0.38,
+        x: x + edge.nx * out,
         y: sillY,
-        z: z + edge.nz * 0.38,
+        z: z + edge.nz * out,
         yaw,
-        sx: gw + 0.5,
-        sy: 0.24,
-        sz: 0.86,
+        sx: gw + 0.7,
+        sy: 0.3,
+        sz: 0.82,
       });
       acc.sill.push({
-        x: x + edge.nx * 0.3,
+        x: x + edge.nx * (out - 0.04),
         y: headY,
-        z: z + edge.nz * 0.3,
+        z: z + edge.nz * (out - 0.04),
         yaw,
-        sx: gw + 0.38,
-        sy: 0.2,
+        sx: gw + 0.55,
+        sy: pointed ? 0.22 : 0.28,
         sz: 0.68,
       });
       const jamb = gw * 0.46;
       for (const side of [-1, 1]) {
         acc.sill.push({
-          x: x + edge.dx * jamb * side + edge.nx * 0.28,
+          x: x + edge.dx * jamb * side + edge.nx * (out - 0.02),
           y: gy,
-          z: z + edge.dz * jamb * side + edge.nz * 0.28,
+          z: z + edge.dz * jamb * side + edge.nz * (out - 0.02),
           yaw,
-          sx: 0.18,
-          sy: gh + 0.28,
+          sx: 0.24,
+          sy: gh + 0.42,
           sz: 0.62,
         });
       }
-      acc.sill.push({ x, y: gy, z, yaw, sx: 0.08, sy: gh, sz: 0.22 });
+      acc.sill.push({
+        x: x + edge.nx * 0.06,
+        y: gy,
+        z: z + edge.nz * 0.06,
+        yaw,
+        sx: 0.09,
+        sy: gh * 0.88,
+        sz: 0.22,
+      });
+      if (pointed) {
+        acc.sill.push({
+          x: x + edge.nx * out,
+          y: headY + 0.46,
+          z: z + edge.nz * out,
+          yaw,
+          sx: gw * 0.58,
+          sy: 0.38,
+          sz: 0.52,
+        });
+        acc.sill.push({
+          x: x + edge.nx * (out + 0.02),
+          y: headY + 0.86,
+          z: z + edge.nz * (out + 0.02),
+          yaw,
+          sx: gw * 0.26,
+          sy: 0.46,
+          sz: 0.4,
+        });
+      }
     }
   }
 }
@@ -151,13 +182,47 @@ function punch(edges, y0, y1, spec, acc, stride) {
   for (const edge of edges) collectWindows(edge, y0, y1, spec, acc, stride);
 }
 
+function addPiers(trim, edges, y0, y1, spec) {
+  const span = Math.max(0.4, y1 - y0);
+  for (const edge of edges) {
+    if (edge.len < spec.bay * 2.4) continue;
+    const bays = Math.max(2, Math.floor(edge.len / spec.bay));
+    const every = bays > 12 ? 3 : 2;
+    const yaw = Math.atan2(edge.nx, edge.nz);
+    for (let bay = every; bay < bays; bay += every) {
+      const along = (bay / bays) * edge.len;
+      if (along < 1.1 || edge.len - along < 1.1) continue;
+      const x = edge.ax + edge.dx * along + edge.nx * 0.34;
+      const z = edge.az + edge.dz * along + edge.nz * 0.34;
+      addBox(trim, x, (y0 + y1) / 2, z, 0.36, span, 0.5, yaw);
+    }
+  }
+}
+
+function addQuoins(trim, edges, y0, y1) {
+  const span = Math.max(0.4, y1 - y0);
+  const seen = new Set();
+  for (const edge of edges) {
+    if (edge.len < 2.2) continue;
+    const yaw = Math.atan2(edge.nx, edge.nz);
+    for (const along of [0.62, Math.max(0.62, edge.len - 0.62)]) {
+      const x = edge.ax + edge.dx * along + edge.nx * 0.26;
+      const z = edge.az + edge.dz * along + edge.nz * 0.26;
+      const key = `${Math.round(x * 2)}:${Math.round(z * 2)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      addBox(trim, x, (y0 + y1) / 2, z, 0.78, span * 0.99, 0.52, yaw);
+    }
+  }
+}
+
 function capRoof(membrane, ring, y, inset = 0.45) {
   const inner = insetRing(ring, inset);
   appendGeometry(membrane, shapeCap(inner, y));
 }
 
 function addPitched(wall, slate, frame, yEave, rise) {
-  const overhang = 0.7;
+  const overhang = 1.28;
   const hl = frame.length / 2;
   const hw = frame.width / 2;
   const hip = frame.length / frame.width < 1.35;
@@ -237,6 +302,8 @@ function stackShell(parts, ring, y0, eave, spec, acc, opts = {}) {
   }
   const stride = opts.stride ?? (opts.sparse ? 2 : 1);
   if (opts.windows !== false) punch(edges, shaftBase, shaftTop, spec, acc, stride);
+  if (opts.piers) addPiers(trim, edges, shaftBase, shaftTop, spec);
+  if (opts.quoins) addQuoins(trim, edges, y0, eave);
   if (opts.ribs) addRibs(trim, edges, shaftBase, eave, opts.ribSpacing ?? 2.5);
   return { edges, shaftBase, shaftTop };
 }
@@ -244,7 +311,8 @@ function stackShell(parts, ring, y0, eave, spec, acc, opts = {}) {
 function buildStock(b, yAt, parts, acc, kind) {
   const fam = familyName(b, kind);
   const spec = FAMILIES[fam];
-  const ring = chamferRing(b.f, b.h > 8 ? 0.34 : 0.16);
+  const articulate = kind === 'gothic' || kind === 'hall' || kind === 'dorm' || kind === 'center' || kind === 'block';
+  const ring = chamferRing(b.f, kind === 'house' ? 0.48 : b.h > 8 ? 1.05 : 0.62);
   const y0 = footprintBase(b.f, yAt);
   const frame = orientedFrame(ring);
   const footprintArea = Math.abs(shapeAreaXZ(ring));
@@ -255,17 +323,23 @@ function buildStock(b, yAt, parts, acc, kind) {
   const rise = pitched ? Math.min(5.2, Math.max(2.2, frame.width * 0.26)) : 0;
   const eave = pitched ? Math.max(4.2, b.h - rise) : b.h;
   const walls = parts.walls[fam];
-  stackShell({ ...parts, walls }, ring, y0, eave, spec, acc, {
+  const shell = stackShell({ ...parts, walls }, ring, y0, eave, spec, acc, {
     pitched,
     ribs: kind === 'arena' || kind === 'garage',
     sparse: kind === 'arena' || kind === 'garage',
-    belts: kind !== 'arena',
+    belts: kind !== 'arena' && kind !== 'garage',
     stride: kind === 'garage' ? 2 : 1,
     ribSpacing: kind === 'garage' ? 4.8 : 2.6,
+    piers: articulate,
+    quoins: articulate,
+    cornicePush: kind === 'gothic' || kind === 'hall' ? 1.45 : 1.15,
+    basePush: 0.28,
+    baseH: 1.2,
   });
   if (pitched) addPitched(walls, parts.slate, frame, y0 + eave, rise);
   else {
-    capRoof(parts.membrane, ring, y0 + eave, 0.4);
+    capRoof(parts.membrane, ring, y0 + eave + 0.06, -1.12);
+    if (shell?.edges) band(parts.trim, shell.edges, y0 + eave - 0.2, y0 + eave + 0.2, 0.1, 1.05);
     if (b.h >= 9 && frame.length > 16) {
       const [cx, cz] = ringCentroid(ring);
       addBox(parts.mech, cx, y0 + eave + 0.7, cz, Math.min(8, frame.length * 0.18), 1.15, Math.min(5, frame.width * 0.22), 0.4);
@@ -276,15 +350,28 @@ function buildStock(b, yAt, parts, acc, kind) {
 function buildLibrary(b, yAt, parts, acc) {
   const fam = familyName(b, 'library');
   const spec = FAMILIES[fam];
-  const ring = chamferRing(b.f, 0.36);
+  const ring = chamferRing(b.f, 0.9);
   const y0 = footprintBase(b.f, yAt);
   const split = y0 + Math.max(6.5, b.h * 0.58);
   const walls = parts.walls[fam];
   const edges = edgesOf(ring);
-  stackShell({ ...parts, walls }, ring, y0, split, spec, acc, { parapet: 0.2, cornice: 0.46, cornicePush: 0.55, basePush: 0.2 });
+  stackShell({ ...parts, walls }, ring, y0, split, spec, acc, {
+    parapet: 0.2,
+    cornice: 0.55,
+    cornicePush: 1.15,
+    basePush: 0.32,
+    piers: true,
+    quoins: true,
+  });
   const upper = insetRing(ring, 2.8);
-  stackShell({ ...parts, walls }, upper, split, y0 + b.h, spec, acc, { baseH: 0.15, parapet: 0.7, cornice: 0.36 });
-  capRoof(parts.membrane, upper, y0 + b.h, 0.35);
+  stackShell({ ...parts, walls }, upper, split, y0 + b.h, spec, acc, {
+    baseH: 0.15,
+    parapet: 0.7,
+    cornice: 0.42,
+    cornicePush: 0.7,
+    quoins: true,
+  });
+  capRoof(parts.membrane, upper, y0 + b.h + 0.05, -0.85);
   let south = edges[0];
   for (const edge of edges) {
     if ((edge.az + edge.bz) / 2 > (south.az + south.bz) / 2) south = edge;
@@ -304,7 +391,7 @@ function buildLibrary(b, yAt, parts, acc) {
 
 function buildLaw(b, yAt, parts, acc) {
   const spec = FAMILIES.glass;
-  const ring = chamferRing(b.f, 0.28);
+  const ring = chamferRing(b.f, 0.7);
   const y0 = footprintBase(b.f, yAt);
   const walls = parts.walls.glass;
   stackShell({ ...parts, walls }, ring, y0, y0 + b.h, spec, acc, {
@@ -338,9 +425,9 @@ function rectRing(frame, halfL, halfW) {
 }
 
 function buildChurch(b, yAt, parts, acc) {
-  const spec = { ...FAMILIES.limestone, bay: 3.35, floor: 5.4, winW: 0.3, winH: 0.62 };
+  const spec = { ...FAMILIES.limestone, bay: 3.6, floor: 5.6, winW: 0.4, winH: 0.62, pointed: true };
   const mass = massingFor(b.n);
-  const ring = chamferRing(b.f, 0.22);
+  const ring = chamferRing(b.f, 0.55);
   const y0 = footprintBase(b.f, yAt);
   const nave = mass.nave;
   const ridge = mass.clerestory;
@@ -349,11 +436,12 @@ function buildChurch(b, yAt, parts, acc) {
   stackShell({ ...parts, walls }, ring, y0, y0 + nave, spec, acc, {
     pitched: true,
     belts: false,
-    baseH: 1.15,
-    basePush: 0.22,
+    baseH: 1.35,
+    basePush: 0.32,
+    quoins: true,
   });
   const frame = orientedFrame(ring);
-  const overhang = 0.65;
+  const overhang = 1.15;
   const hl = frame.length / 2;
   const hw = frame.width / 2;
   const tower = 4.6;
@@ -386,8 +474,8 @@ function buildChurch(b, yAt, parts, acc) {
       const along = ((i + 0.5) / count) * edge.len;
       const x = edge.ax + edge.dx * along + edge.nx * 0.7;
       const z = edge.az + edge.dz * along + edge.nz * 0.7;
-      addBox(parts.trim, x, y0 + nave * 0.48, z, 1.2, nave * 0.88, 2.7, yaw);
-      addBox(parts.trim, x + edge.nx * 0.35, y0 + nave * 0.92, z + edge.nz * 0.35, 0.55, 2.1, 0.7, yaw);
+      addBox(parts.trim, x, y0 + nave * 0.48, z, 1.45, nave * 0.9, 3.4, yaw);
+      addBox(parts.trim, x + edge.nx * 0.4, y0 + nave * 0.94, z + edge.nz * 0.4, 0.62, 2.4, 0.85, yaw);
     }
   }
   const [cx, cz] = ringCentroid(ring);
@@ -650,7 +738,13 @@ export function buildStructures(data, yAt, materials) {
   for (const name of Object.keys(FAMILIES)) parts.walls[name] = new MeshBuf();
   const acc = { glass: [], sill: [] };
   const blockers = [];
-  const buildings = [...(data.buildings || [])].sort((a, b) => (b.n ? 1 : 0) - (a.n ? 1 : 0));
+  const buildings = [...(data.buildings || [])].sort((a, b) => {
+    const named = (b.n ? 1 : 0) - (a.n ? 1 : 0);
+    if (named) return named;
+    const ac = a.f?.length ? ringCentroid(a.f) : [0, 0];
+    const bc = b.f?.length ? ringCentroid(b.f) : [0, 0];
+    return ac[0] * ac[0] + ac[1] * ac[1] - (bc[0] * bc[0] + bc[1] * bc[1]);
+  });
 
   for (const b of buildings) {
     if (!b.f || b.f.length < 4) continue;
@@ -700,7 +794,10 @@ export function buildStructures(data, yAt, materials) {
   const glassMesh = makeInstances(new THREE.BoxGeometry(1, 1, 1), materials.glass, acc.glass);
   const sillMesh = makeInstances(new THREE.BoxGeometry(1, 1, 1), materials.trim, acc.sill);
   if (glassMesh) group.add(glassMesh);
-  if (sillMesh) group.add(sillMesh);
+  if (sillMesh) {
+    sillMesh.castShadow = true;
+    group.add(sillMesh);
+  }
 
   return { group, blockers, windows: acc.glass.length };
 }

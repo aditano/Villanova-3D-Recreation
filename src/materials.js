@@ -30,9 +30,10 @@ export function createMaterials(textures) {
   for (const name of Object.keys(FAMILIES)) {
     const mat = std(textures.families[name], {
       emissive: 0xffe2b0,
-      emissiveIntensity: 0.035,
+      emissiveIntensity: 0.02,
       vertexColors: true,
-      envMapIntensity: name === 'glass' ? 0.85 : 0.32,
+      envMapIntensity: name === 'glass' ? 0.7 : 0.1,
+      normalScale: name === 'glass' ? 0.35 : name === 'brick' ? 1.45 : 1.2,
       side: THREE.DoubleSide,
     });
     families[name] = mat;
@@ -40,9 +41,9 @@ export function createMaterials(textures) {
   }
 
   const glass = new THREE.MeshStandardMaterial({
-    color: 0x163040,
-    roughness: 0.16,
-    metalness: 0.62,
+    color: 0x102833,
+    roughness: 0.22,
+    metalness: 0.42,
     emissive: 0xffc98a,
     emissiveIntensity: 0.02,
     envMapIntensity: 1.05,
@@ -53,14 +54,15 @@ export function createMaterials(textures) {
     families,
     facadeList,
     glass,
-    trim: std(textures.trim, { vertexColors: false, roughness: 1, metalness: 1 }),
+    trim: std(textures.trim, { vertexColors: false, roughness: 1, metalness: 1, normalScale: 1.15, envMapIntensity: 0.12 }),
     roof: std(textures.membrane, { side: THREE.DoubleSide, envMapIntensity: 0.2 }),
     slate: std(textures.slate, { side: THREE.DoubleSide, envMapIntensity: 0.25 }),
     asphalt: std(textures.asphalt, {
       polygonOffset: true,
       polygonOffsetFactor: -1,
       polygonOffsetUnits: -2,
-      envMapIntensity: 0.18,
+      envMapIntensity: 0.08,
+      normalScale: 1.45,
     }),
     concrete: std(textures.concrete, {
       polygonOffset: true,
@@ -105,9 +107,9 @@ export function createMaterials(textures) {
     }),
     seat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.72, vertexColors: true }),
     fascia: new THREE.MeshStandardMaterial({ color: 0x10243f, roughness: 0.7, metalness: 0.08 }),
-    tree: new THREE.MeshStandardMaterial({ color: 0x2f6a32, roughness: 0.9 }),
-    treeDark: new THREE.MeshStandardMaterial({ color: 0x245428, roughness: 0.9 }),
-    trunk: new THREE.MeshStandardMaterial({ color: 0x5c4636, roughness: 0.9 }),
+    tree: new THREE.MeshStandardMaterial({ color: 0x2c6e34, roughness: 0.82, metalness: 0.0 }),
+    treeDark: new THREE.MeshStandardMaterial({ color: 0x1d5226, roughness: 0.86, metalness: 0.0 }),
+    trunk: new THREE.MeshStandardMaterial({ color: 0x5a4030, roughness: 0.92, metalness: 0.0 }),
     skin: new THREE.MeshStandardMaterial({ color: 0xc48b62, roughness: 0.7 }),
     spire: std(textures.trim, { envMapIntensity: 0.3, side: THREE.DoubleSide }),
     pitch: new THREE.MeshStandardMaterial({ color: 0x2c6b38, roughness: 0.9, metalness: 0.0 }),

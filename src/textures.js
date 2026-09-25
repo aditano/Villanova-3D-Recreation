@@ -55,9 +55,8 @@ function heightToNormal(height, w, h, strength) {
 }
 
 /**
- * One floor, one bay. UVs are metres / bay by metres / floor, so the painted
- * opening lands on the modelled sill.
- * Glass sits in v 0.34–0.78, sill at 0.30, head at 0.80.
+ * One floor, one bay of masonry. Openings are modelled boxes, not a painted
+ * window grid. Curtain wall is the exception: the glass is the wall.
  */
 export const FAMILIES = {
   limestone: { bay: 3.05, floor: 3.62, winW: 0.36, winH: 0.5, wall: 'ashlar', base: '#ddd6c8', mortar: '#b9b2a4', trim: '#f3eee4', glass: '#243440', blockW: 46, blockH: 28 },
@@ -177,57 +176,34 @@ function paintFacade(spec, seed) {
   e.fillRect(0, 0, w, h);
   paintWall(g, hgt, w, h, spec, rand);
 
-  const gw = w * spec.winW;
-  const gh = h * spec.winH;
-  const x = (w - gw) / 2;
-  const y = h * (1 - 0.78);
-  const glassTop = y;
-  const glassBot = y + gh;
-
-  g.fillStyle = spec.trim;
-  g.fillRect(0, glassBot, w, Math.max(2, h * 0.035));
-  g.fillRect(0, glassTop - h * 0.03, w, Math.max(2, h * 0.03));
-  for (let yy = Math.floor(glassBot); yy < Math.min(h, glassBot + h * 0.04); yy++) {
-    for (let xx = 0; xx < w; xx++) hgt[yy * w + xx] = 0.92;
-  }
-
   if (spec.wall === 'curtain') {
+    const x = w * 0.07;
+    const glassTop = h * 0.08;
+    const gw = w * 0.86;
+    const gh = h * 0.78;
     g.fillStyle = spec.mortar;
     g.fillRect(0, 0, w * 0.06, h);
     g.fillRect(w * 0.94, 0, w * 0.06, h);
-    const grd = g.createLinearGradient(x, glassTop, x, glassBot);
+    const grd = g.createLinearGradient(x, glassTop, x, glassTop + gh);
     grd.addColorStop(0, shade(spec.glass, 1.25));
     grd.addColorStop(0.45, spec.glass);
     grd.addColorStop(1, shade(spec.glass, 0.72));
     g.fillStyle = grd;
-    g.fillRect(w * 0.07, h * 0.08, w * 0.86, h * 0.78);
+    g.fillRect(x, glassTop, gw, gh);
     r.fillStyle = 'rgb(0,40,160)';
     r.fillRect(0, 0, w, h);
     r.fillStyle = 'rgb(0,28,190)';
-    r.fillRect(w * 0.07, h * 0.08, w * 0.86, h * 0.78);
-  } else if (spec.wall !== 'rib') {
-    const grd = g.createLinearGradient(x, glassTop, x + gw, glassBot);
-    grd.addColorStop(0, shade(spec.glass, 1.35));
-    grd.addColorStop(0.4, spec.glass);
-    grd.addColorStop(1, shade(spec.glass, 0.55));
-    g.fillStyle = grd;
-    g.fillRect(x, glassTop, gw, gh);
-    g.fillStyle = shade(spec.trim, 0.8);
-    g.fillRect(x + gw * 0.48, glassTop, Math.max(2, w * 0.012), gh);
-    g.fillRect(x, glassTop + gh * 0.42, gw, Math.max(1, h * 0.008));
-    e.fillStyle = 'rgb(40,24,8)';
-    e.fillRect(x + 2, glassTop + 2, gw - 4, gh - 4);
-    for (let yy = Math.floor(glassTop); yy < glassBot; yy++) {
-      for (let xx = Math.floor(x); xx < x + gw; xx++) {
-        if (xx >= 0 && yy >= 0 && xx < w && yy < h) hgt[yy * w + xx] = 0.12;
-      }
-    }
-    r.fillStyle = 'rgb(0,214,8)';
-    r.fillRect(0, 0, w, h);
-    r.fillStyle = 'rgb(0,48,140)';
     r.fillRect(x, glassTop, gw, gh);
+  } else if (spec.wall !== 'rib') {
+    r.fillStyle = 'rgb(0,220,10)';
+    r.fillRect(0, 0, w, h);
+    g.fillStyle = spec.trim;
+    g.fillRect(0, h * 0.9, w, h * 0.035);
+    for (let yy = Math.floor(h * 0.9); yy < Math.min(h, h * 0.94); yy++) {
+      for (let xx = 0; xx < w; xx++) hgt[yy * w + xx] = 0.9;
+    }
   } else {
-    r.fillStyle = 'rgb(0,150,40)';
+    r.fillStyle = 'rgb(0,170,30)';
     r.fillRect(0, 0, w, h);
   }
 
@@ -242,7 +218,7 @@ function paintFacade(spec, seed) {
     g.fillRect(sx - rad, sy - rad, rad * 2, rad * 2);
   }
 
-  const normal = heightToNormal(hgt, w, h, spec.wall === 'curtain' ? 1.4 : 3.2);
+  const normal = heightToNormal(hgt, w, h, spec.wall === 'curtain' ? 1.6 : spec.wall === 'brick' ? 4.6 : 3.6);
   return {
     map: canvasTexture(color),
     normalMap: canvasTexture(normal, { color: false }),

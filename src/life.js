@@ -262,70 +262,156 @@ export function buildLife(data, yAt, materials) {
   group.add(heads);
 
   const trees = [];
+  const shrubs = [];
   const pitches = data.pitches || [];
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minZ = Infinity;
-  let maxZ = -Infinity;
-  for (const b of buildings) {
-    for (const [x, z] of b.f) {
-      minX = Math.min(minX, x);
-      maxX = Math.max(maxX, x);
-      minZ = Math.min(minZ, z);
-      maxZ = Math.max(maxZ, z);
-    }
-  }
-  const landmarks = data.landmarks || [];
-  for (let x = minX - 10; x < maxX + 20 && trees.length < 420; x += 17) {
-    for (let z = minZ - 10; z < maxZ + 20 && trees.length < 420; z += 17) {
-      const jx = x + (hash01(x, z) - 0.5) * 8;
-      const jz = z + (hash01(z, x) - 0.5) * 8;
-      if (hash01(jx + 9, jz) < 0.35) continue;
-      if (insideBuildings(jx, jz, buildings)) continue;
-      let nearRoad = false;
-      for (const road of data.roads || []) {
-        const profile = roadProfile(road);
-        const reach = profile.asphalt / 2 + profile.walk + 1.2;
-        for (let i = 1; i < road.pts.length; i += 2) {
-          const a = road.pts[i];
-          if (Math.hypot(a[0] - jx, a[1] - jz) < reach) {
-            nearRoad = true;
-            break;
-          }
-        }
-        if (nearRoad) break;
+  const treeCap = 860;
+  const shrubCap = 520;
+  const openGround = (x, z) => {
+    if (Math.abs(x) < 16 && z > -8 && z < 76) return false;
+    if (insideBuildings(x, z, buildings)) return false;
+    if (data.stadium?.outer && pointInPoly(x, z, data.stadium.outer)) return false;
+    if (pitches.some((p) => p.f && pointInPoly(x, z, p.f))) return false;
+    return true;
+  };
+  const pushTree = (x, z, height) => {
+    if (trees.length >= treeCap || !openGround(x, z)) return;
+    const groundY = yAt(x, z);
+    const trunk = height * 0.42;
+    const radius = height * 0.36;
+    trees.push({
+      x,
+      z,
+      canopyY: groundY + trunk + radius * 0.28,
+      trunkY: groundY + trunk * 0.5,
+      sx: radius * (0.82 + hash01(x, z) * 0.36),
+      sy: radius * 0.78,
+      sz: radius * (0.8 + hash01(z, x) * 0.34),
+      trunkH: trunk,
+      dark: hash01(x + 1.3, z) > 0.48,
+      yaw: hash01(z, x + 4) * Math.PI,
+    });
+  };
+  const pushShrub = (x, z) => {
+    if (shrubs.length >= shrubCap || !openGround(x, z)) return;
+    const s = 1.15 + hash01(x, z) * 0.95;
+    shrubs.push({
+      x,
+      y: yAt(x, z) + s * 0.45,
+      z,
+      sx: s,
+      sy: s * 0.62,
+      sz: s * (0.85 + hash01(z, x) * 0.3),
+      yaw: hash01(x + 2, z) * Math.PI,
+    });
+  };
+  const walkSides = (pts, spacing, offset, fn) => {
+    if (!pts || pts.length < 2) return;
+    let cursor = spacing * 0.37;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (len < 0.25) continue;
+      const dx = (b[0] - a[0]) / len;
+      const dz = (b[1] - a[1]) / len;
+      while (cursor <= len) {
+        const px = a[0] + dx * cursor;
+        const pz = a[1] + dz * cursor;
+        const j = (hash01(px, pz) - 0.5) * 1.4;
+        const ox = -dz * (offset + j);
+        const oz = dx * (offset + j);
+        fn(px + ox, pz + oz, px - ox, pz - oz);
+        cursor += spacing;
       }
-      if (nearRoad) continue;
-      if (landmarks.some((lm) => Math.hypot(lm.x - jx, lm.z - jz) < 16)) continue;
-      if (pitches.some((p) => pointInPoly(jx, jz, p.f))) continue;
-      const s = 2.4 + hash01(jx, jz) * 2.8;
-      trees.push({ x: jx, y: yAt(jx, jz) + s * 0.85, z: jz, sx: s, sy: s * 0.85, sz: s, dark: hash01(jz, jx) > 0.5 });
+      cursor -= len;
     }
+  };
+  for (const road of data.roads || []) {
+    const profile = roadProfile(road);
+    let spacing = 0;
+    let height = 8;
+    if (profile.kind === 'arterial') {
+      spacing = 16;
+      height = 11.5;
+    } else if (profile.kind === 'collector') {
+      spacing = 20;
+      height = 9.5;
+    } else if (profile.kind === 'street') {
+      spacing = 26;
+      height = 8.2;
+    } else if (profile.kind === 'drive') {
+      spacing = 32;
+      height = 7.2;
+    } else continue;
+    const off = profile.asphalt / 2 + profile.curb + profile.walk + 2.6;
+    walkSides(road.pts, spacing, off, (x1, z1, x2, z2) => {
+      for (const [x, z] of [
+        [x1, z1],
+        [x2, z2],
+      ]) {
+        if (profile.kind === 'drive' && Math.hypot(x, z) > 420) continue;
+        if (profile.kind !== 'arterial' && hash01(x + 8, z) < 0.22) continue;
+        pushTree(x, z, height * (0.86 + hash01(z, x) * 0.28));
+      }
+    });
   }
-  const canopy = new THREE.IcosahedronGeometry(1, 1);
+  for (const path of data.paths || []) {
+    if (shrubs.length >= shrubCap) break;
+    const off = Math.max(2.4, (path.w || 1.6) * 0.5 + 1.5);
+    walkSides(path.pts, 13, off, (x1, z1, x2, z2) => {
+      for (const [x, z] of [
+        [x1, z1],
+        [x2, z2],
+      ]) {
+        if (Math.hypot(x, z) > 340) continue;
+        if (hash01(x, z + 3) < 0.38) continue;
+        if (hash01(z, x) > 0.72) pushTree(x, z, 6.5 + hash01(x, z) * 2.2);
+        else pushShrub(x, z);
+      }
+    });
+  }
+  const quad = (data.landmarks || []).find((lm) => lm.id === 'quad') || { x: 91, z: 89 };
+  for (let i = 0; i < 18; i++) {
+    const a = (i / 18) * Math.PI * 2;
+    const r = 50 + hash01(i, 5) * 10;
+    pushTree(quad.x + Math.cos(a) * r, quad.z + Math.sin(a) * r, 10 + hash01(i, quad.x) * 2.4);
+  }
+  const canopy = new THREE.SphereGeometry(1, 7, 5);
   const darkTrees = trees.filter((t) => t.dark);
   const lightTrees = trees.filter((t) => !t.dark);
   const addCanopy = (list, mat) => {
     const mesh = new THREE.InstancedMesh(canopy, mat, Math.max(1, list.length));
     mesh.count = list.length;
-    if (list.length) placeInstances(mesh, list);
-    mesh.castShadow = false;
+    if (list.length) {
+      placeInstances(
+        mesh,
+        list.map((t) => ({ x: t.x, y: t.canopyY, z: t.z, yaw: t.yaw, sx: t.sx, sy: t.sy, sz: t.sz })),
+      );
+    }
+    mesh.castShadow = true;
     mesh.receiveShadow = true;
     group.add(mesh);
   };
   addCanopy(lightTrees, materials.tree);
   addCanopy(darkTrees, materials.treeDark);
-  const trunkGeo = new THREE.CylinderGeometry(0.16, 0.24, 1, 5);
+  const trunkGeo = new THREE.CylinderGeometry(0.22, 0.34, 1, 6);
   const trunks = new THREE.InstancedMesh(trunkGeo, materials.trunk, Math.max(1, trees.length));
   trunks.count = trees.length;
   if (trees.length) {
     placeInstances(
       trunks,
-      trees.map((t) => ({ x: t.x, y: t.y - t.sy * 0.85, z: t.z, sx: 1, sy: t.sy * 0.9, sz: 1 })),
+      trees.map((t) => ({ x: t.x, y: t.trunkY, z: t.z, sx: 1, sy: t.trunkH, sz: 1 })),
     );
   }
   trunks.castShadow = false;
   group.add(trunks);
+  const shrubGeo = new THREE.SphereGeometry(1, 6, 4);
+  const shrubMesh = new THREE.InstancedMesh(shrubGeo, materials.treeDark, Math.max(1, shrubs.length));
+  shrubMesh.count = shrubs.length;
+  if (shrubs.length) placeInstances(shrubMesh, shrubs);
+  shrubMesh.castShadow = false;
+  shrubMesh.receiveShadow = true;
+  group.add(shrubMesh);
 
   const dummy = new THREE.Object3D();
   function pointAlong(pts, dist) {
