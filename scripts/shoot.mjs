@@ -1,6 +1,8 @@
 /**
  * Capture preset views once the campus reports ready.
- *   node scripts/shoot.mjs <baseUrl> <outDir> [view ...]
+ *   node scripts/shoot.mjs <baseUrl> <outDir> [view|view@hour ...]
+ * Hour defaults to 15.15. `church@21` writes church-h21.png.
+ * Page errors and uncaught exceptions fail the shot.
  */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -77,8 +79,17 @@ class Cdp {
   }
 }
 
-async function shoot(view) {
-  const profile = `/tmp/vu-chrome-${view}-${process.pid}`;
+function parseShot(token) {
+  const [name, hourRaw] = String(token).split('@');
+  const hour = hourRaw || process.env.SHOT_HOUR || '15.15';
+  const file = hourRaw ? `${name}-h${hourRaw.replace(/[^\d.]+/g, '_')}` : name;
+  return { name, hour, file };
+}
+
+async function shoot(token) {
+  const shotSpec = parseShot(token);
+  const { name, hour, file } = shotSpec;
+  const profile = `/tmp/vu-chrome-${file}-${process.pid}`;
   rmSync(profile, { recursive: true, force: true });
   const proc = launch(profile);
   try {
@@ -98,8 +109,17 @@ async function shoot(view) {
         calls.set(id, { resolve, reject });
         browser.ws.send(JSON.stringify({ id, method, params, sessionId }));
       });
+    const pageErrors = [];
     browser.ws.addEventListener('message', (ev) => {
       const msg = JSON.parse(ev.data);
+      if (msg.sessionId && msg.method === 'Runtime.exceptionThrown') {
+        const details = msg.params?.exceptionDetails;
+        pageErrors.push(details?.exception?.description || details?.text || 'exception');
+      }
+      if (msg.sessionId && msg.method === 'Runtime.consoleAPICalled' && msg.params?.type === 'error') {
+        const text = (msg.params.args || []).map((arg) => arg.value ?? arg.description ?? '').join(' ');
+        if (text) pageErrors.push(text);
+      }
       if (!msg.sessionId || !msg.id || !calls.has(msg.id)) return;
       const pending = calls.get(msg.id);
       calls.delete(msg.id);
@@ -116,9 +136,9 @@ async function shoot(view) {
       mobile: false,
     });
     const url = new URL(base);
-    url.searchParams.set('view', view);
+    url.searchParams.set('view', name);
     url.searchParams.set('clean', '1');
-    url.searchParams.set('hour', '15.15');
+    url.searchParams.set('hour', hour);
     await call('Page.navigate', { url: url.toString() });
     const started = Date.now();
     let ready = false;
@@ -142,15 +162,17 @@ async function shoot(view) {
       if (value?.err) break;
       await sleep(400);
     }
-    if (!ready) throw new Error(`${view} never became ready ${lastNote}`);
+    if (!ready) throw new Error(`${file} never became ready ${lastNote}`);
     await call('Runtime.evaluate', {
       expression: `document.querySelectorAll('.hud-tl,.hud-tr,.hud-nav,.tools,.walk-help,.walk-pad,.loader,.label-layer').forEach((el)=>{el.style.visibility='hidden';});`,
     });
     await sleep(Number(process.env.SHOT_SETTLE_MS || 900));
+    const serious = pageErrors.filter((line) => !/favicon|GL_CLOSE_PATH_NV|THREE.WebGLShadowMap/i.test(line));
+    if (serious.length) throw new Error(`${file} page errors: ${serious.slice(0, 4).join(' | ')}`);
     const shot = await call('Page.captureScreenshot', { format: 'png' });
-    const file = `${outDir}/${view}.png`;
-    writeFileSync(file, Buffer.from(shot.data, 'base64'));
-    console.log(`wrote ${file}`);
+    const path = `${outDir}/${file}.png`;
+    writeFileSync(path, Buffer.from(shot.data, 'base64'));
+    console.log(`wrote ${path}`);
   } finally {
     proc.kill('SIGKILL');
     await sleep(300);

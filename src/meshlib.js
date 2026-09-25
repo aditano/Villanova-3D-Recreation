@@ -281,12 +281,13 @@ export function addBox(buf, cx, cy, cz, sx, sy, sz, yaw = 0) {
     p(-hx, -hy, hz), p(hx, -hy, hz), p(hx, hy, hz), p(-hx, hy, hz),
   ];
   const face = (a, b, c, d) => buf.quad(v[a], v[b], v[c], v[d]);
-  face(0, 1, 2, 3);
-  face(5, 4, 7, 6);
-  face(4, 0, 3, 7);
-  face(1, 5, 6, 2);
-  face(3, 2, 6, 7);
-  face(4, 5, 1, 0);
+  // CCW seen from outside. FrontSide materials cull the previous inward winding.
+  face(0, 3, 2, 1);
+  face(5, 6, 7, 4);
+  face(4, 7, 3, 0);
+  face(1, 2, 6, 5);
+  face(3, 7, 6, 2);
+  face(4, 0, 1, 5);
 }
 
 export function footprintSpan(ring) {
