@@ -108,3 +108,29 @@ export function resolveBuilding(building) {
     rule: rule?.why || '',
   };
 }
+
+/**
+ * Roof and landmark forms the extract does not carry.
+ * Heights still come from resolveBuilding. These only pick a massing kind.
+ */
+export const MASSING = {
+  'St. Thomas of Villanova Church': { kind: 'church', tip: 34, nave: 16.5, clerestory: 21 },
+  'Finneran Pavilion': { kind: 'pavilion', arch: 7.4 },
+  'Villanova Station': { kind: 'station' },
+  'Falvey Memorial Library': { kind: 'library' },
+  'Old Falvey Hall': { kind: 'library' },
+  'Charles Widger School of Law': { kind: 'law', family: 'glass' },
+  'Mendel Hall': { kind: 'hall' },
+  'Bartley Hall': { kind: 'hall' },
+  'Connelly Center': { kind: 'center' },
+  'Tolentine Hall': { kind: 'gothic' },
+  'Garey Hall': { kind: 'gothic' },
+  'Alumni Hall': { kind: 'gothic' },
+  'Corr Hall': { kind: 'gothic' },
+  'Saint Thomas of Villanova Monastery': { kind: 'gothic' },
+  'Augustinian Province of Saint Thomas of Villanova': { kind: 'gothic' },
+};
+
+export function massingFor(name) {
+  return MASSING[name] || null;
+}

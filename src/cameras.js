@@ -1,4 +1,5 @@
 import { areaCentroid, pointInPoly, ringRadius } from './geo.js';
+import { massingFor } from './height-rules.js';
 
 const PRESET_ORDER = ['aerial', 'quad', 'church', 'stadium', 'library', 'pavilion', 'station', 'lancaster', 'rotate'];
 
@@ -119,10 +120,12 @@ function sightClear(hit, eyeX, eyeZ, frame) {
   return true;
 }
 
-function placeClear(hit, frame, terrainY, { bearing, distance, eye, aim, pad = 7 }) {
+function placeClear(hit, frame, terrainY, { bearing, distance, eye, aim, pad = 7, sweep = 2.8 }) {
   const bearings = [bearing];
-  for (let i = 1; i <= 10; i++) {
-    bearings.push(bearing + i * 0.28, bearing - i * 0.28);
+  for (let i = 1; i <= 12; i++) {
+    const delta = i * 0.18;
+    if (delta > sweep) break;
+    bearings.push(bearing + delta, bearing - delta);
   }
   const distances = [distance, distance * 1.2, distance * 1.45, distance * 0.84];
   for (const nextBearing of bearings) {
@@ -192,13 +195,17 @@ export function buildViews(data, terrainY) {
   const station = frameOf(buildingByName(data, 'Villanova Station'), landmarkRecord(data, 'station'), terrainY);
 
   const quadBearing = Math.atan2(anchor.x - church.x, anchor.z - church.z);
+  // Due south. The quad anchor sits on the Tolentine axis, so a camera there
+  // looks through the church at Tolentine Hall.
   const churchView = placeClear(hit, church, terrainY, {
-    bearing: quadBearing,
-    distance: Math.max(92, church.radius * 3.4),
-    eye: 24,
+    bearing: 0,
+    distance: 80,
+    eye: 18,
     aim: 12,
-    pad: 6,
+    pad: 4.5,
+    sweep: 0.16,
   });
+  churchView.fov = 40;
   const quadView = placeClear(hit, church, terrainY, {
     bearing: quadBearing,
     distance: 158,
@@ -288,6 +295,27 @@ export function buildViews(data, terrainY) {
     }
   }
 
+  const churchLm = landmarkRecord(data, 'church') || { x: church.x, z: church.z };
+  let walk = aerial;
+  if (road) {
+    const dist = Math.hypot(churchLm.x - road.x, churchLm.z - road.z) || 1;
+    const sx = (churchLm.x - road.x) / dist;
+    const sz = (churchLm.z - road.z) / dist;
+    let wx = road.x + sx * 14;
+    let wz = road.z + sz * 14;
+    for (let i = 0; i < 8 && hit(wx, wz); i++) {
+      wx += 3;
+      wz += 2;
+    }
+    walk = {
+      pos: [wx, terrainY(wx, wz) + 1.68, wz],
+      target: [churchLm.x, terrainY(churchLm.x, churchLm.z) + 9, churchLm.z],
+      fov: 62,
+      yaw: Math.atan2(wx - churchLm.x, wz - churchLm.z),
+      walk: true,
+    };
+  }
+
   const views = {
     aerial,
     quad: quadView,
@@ -297,9 +325,95 @@ export function buildViews(data, terrainY) {
     pavilion: pavilionView,
     station: stationView,
     lancaster,
+    walk,
     rotate: aerial,
   };
   return { views, anchor, order: PRESET_ORDER.filter((name) => name !== 'rotate') };
+}
+
+function projectNdc(pos, target, fovDeg, aspect, point) {
+  const fx = target[0] - pos[0];
+  const fy = target[1] - pos[1];
+  const fz = target[2] - pos[2];
+  const fl = Math.hypot(fx, fy, fz) || 1;
+  const zx = -fx / fl;
+  const zy = -fy / fl;
+  const zz = -fz / fl;
+  let xx = zz;
+  let xy = 0;
+  let xz = -zx;
+  const xl = Math.hypot(xx, xy, xz) || 1;
+  xx /= xl;
+  xy /= xl;
+  xz /= xl;
+  const yx = zy * xz - zz * xy;
+  const yy = zz * xx - zx * xz;
+  const yz = zx * xy - zy * xx;
+  const dx = point[0] - pos[0];
+  const dy = point[1] - pos[1];
+  const dz = point[2] - pos[2];
+  const cx = dx * xx + dy * xy + dz * xz;
+  const cy = dx * yx + dy * yy + dz * yz;
+  const cz = dx * zx + dy * zy + dz * zz;
+  if (cz >= -0.4) return null;
+  const f = 1 / Math.tan(((fovDeg * Math.PI) / 180) / 2);
+  return { x: (cx / -cz) * (f / aspect), y: (cy / -cz) * f, z: cz };
+}
+
+function ndcDist(ndc) {
+  if (!ndc) return 9;
+  return Math.hypot(ndc.x, ndc.y);
+}
+
+function namedPoint(data, name, terrainY, y) {
+  const building = buildingByName(data, name);
+  const center = building?.f ? areaCentroid(building.f) : [0, 0];
+  return [center[0], terrainY(center[0], center[1]) + y, center[1], building];
+}
+
+/** Screen-space check. A camera aimed through Tolentine at the church origin fails this. */
+export function churchFramingReport(data, terrainY, view) {
+  const problems = [];
+  const fov = view?.fov || 42;
+  const aspect = 16 / 9;
+  const mass = massingFor('St. Thomas of Villanova Church') || { nave: 16.5, tip: 34 };
+  const church = namedPoint(data, 'St. Thomas of Villanova Church', terrainY, mass.nave * 0.42);
+  const tolentine = namedPoint(data, 'Tolentine Hall', terrainY, 8);
+  const spire = [church[0], terrainY(church[0], church[2]) + mass.tip, church[2]];
+  const churchNdc = projectNdc(view.pos, view.target, fov, aspect, church);
+  const tolNdc = projectNdc(view.pos, view.target, fov, aspect, tolentine);
+  const spireNdc = projectNdc(view.pos, view.target, fov, aspect, spire);
+  const churchDist = ndcDist(churchNdc);
+  const tolDist = ndcDist(tolNdc);
+  if (churchDist > 0.22) problems.push(`church: St. Thomas is off center (${churchDist.toFixed(2)})`);
+  if (tolDist < churchDist + 0.38) {
+    problems.push(`church: Tolentine is in frame (${tolDist.toFixed(2)}) instead of St. Thomas (${churchDist.toFixed(2)})`);
+  }
+  if (!spireNdc || Math.abs(spireNdc.x) > 0.92 || Math.abs(spireNdc.y) > 0.92) {
+    problems.push('church: spire is outside the frame');
+  }
+  const ring = church[3]?.f || [];
+  let fill = 0;
+  for (const [x, z] of ring) {
+    const ndc = projectNdc(view.pos, view.target, fov, aspect, [x, church[1], z]);
+    if (ndc) fill = Math.max(fill, Math.abs(ndc.x), Math.abs(ndc.y));
+  }
+  if (fill < 0.28) problems.push(`church: St. Thomas does not fill the frame (${fill.toFixed(2)})`);
+  return { problems, churchDist, tolDist, fill };
+}
+
+/** The rejected pose: bearing 0.78 looks through the church at Tolentine. */
+export function rejectedChurchPose(data, terrainY) {
+  const church = namedPoint(data, 'St. Thomas of Villanova Church', terrainY, 12);
+  const bearing = 0.78;
+  const dist = 86;
+  const x = church[0] + Math.sin(bearing) * dist;
+  const z = church[2] + Math.cos(bearing) * dist;
+  return {
+    pos: [x, terrainY(x, z) + 22, z],
+    target: [church[0], church[1], church[2]],
+    fov: 36,
+  };
 }
 
 export function auditViews(data, terrainY) {
@@ -375,6 +489,31 @@ export function auditViews(data, terrainY) {
     if (name === 'station' && (distance < 24 || distance > 70)) {
       problems.push(`${name}: frame distance ${distance.toFixed(0)} m`);
     }
+  }
+  problems.push(...churchFramingReport(data, terrainY, views.church).problems);
+  const rejected = churchFramingReport(data, terrainY, rejectedChurchPose(data, terrainY));
+  if (!rejected.problems.length) problems.push('church: framing audit accepted the Tolentine-aligned pose');
+  const centers = {
+    library: namedPoint(data, 'Falvey Memorial Library', terrainY, 8),
+    pavilion: namedPoint(data, 'Finneran Pavilion', terrainY, 10),
+    station: namedPoint(data, 'Villanova Station', terrainY, 4),
+  };
+  for (const [name, point] of Object.entries(centers)) {
+    const ndc = projectNdc(views[name].pos, views[name].target, views[name].fov || 42, 16 / 9, point);
+    const off = ndcDist(ndc);
+    if (off > 0.38) problems.push(`${name}: landmark is off center (${off.toFixed(2)})`);
+  }
+  if (byFrame.stadium) {
+    const field = [byFrame.stadium.x, byFrame.stadium.ground + 2, byFrame.stadium.z];
+    const off = ndcDist(projectNdc(views.stadium.pos, views.stadium.target, views.stadium.fov || 42, 16 / 9, field));
+    if (off > 0.32) problems.push(`stadium: field is off center (${off.toFixed(2)})`);
+  }
+  const walk = views.walk;
+  if (!walk?.walk) problems.push('walk pose missing');
+  else {
+    const eye = terrainY(walk.pos[0], walk.pos[2]) + 1.68;
+    if (Math.abs(walk.pos[1] - eye) > 0.25) problems.push(`walk eye off terrain by ${(walk.pos[1] - eye).toFixed(2)}`);
+    if (hit(walk.pos[0], walk.pos[2])) problems.push('walk start inside a building');
   }
   return { problems, views, anchor };
 }

@@ -3,10 +3,10 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
 import { buildCampus } from './campus.js';
 import { buildViews } from './cameras.js';
-import { createCampusLife } from './campus-life.js';
 import { annotateCrossings } from './crossings.js';
 import { makeTerrain, pointInPoly } from './geo.js';
-import { createFacadeTextures, createMaterials } from './materials.js';
+import { createMaterials } from './materials.js';
+import { createTextures } from './textures.js';
 
 const canvas = document.getElementById('c');
 const loader = document.getElementById('loader');
@@ -19,9 +19,9 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPrefere
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, window.innerWidth < 800 ? 1.25 : 1.75));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.12;
+renderer.toneMappingExposure = 1.08;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const labelRenderer = new CSS2DRenderer();
@@ -30,8 +30,8 @@ labelRenderer.domElement.className = 'label-layer';
 document.getElementById('app').appendChild(labelRenderer.domElement);
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0xc5e6f8, 0.00007);
-scene.background = new THREE.Color(0x8ec8f0);
+scene.fog = new THREE.FogExp2(0xd7e6f4, 0.00013);
+scene.background = new THREE.Color(0xd5e4f2);
 
 const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.35, 5000);
 camera.position.set(40, 420, 380);
@@ -44,34 +44,30 @@ controls.minDistance = 6;
 controls.maxDistance = 2200;
 controls.target.set(0, 8, 0);
 
-const hemi = new THREE.HemisphereLight(0xd4ecff, 0x4f7a38, 0.62);
+const hemi = new THREE.HemisphereLight(0xd7ecff, 0x2a5a30, 0.85);
 scene.add(hemi);
-const fill = new THREE.DirectionalLight(0xd7e8ff, 0.28);
-fill.position.set(-520, 240, -360);
-scene.add(fill);
-const sun = new THREE.DirectionalLight(0xfff6e4, 3.15);
+const sun = new THREE.DirectionalLight(0xfff3e4, 2.1);
 sun.castShadow = true;
 sun.shadow.mapSize.set(window.innerWidth < 800 ? 1024 : 2048, window.innerWidth < 800 ? 1024 : 2048);
-sun.shadow.camera.near = 20;
-sun.shadow.camera.far = 2200;
-sun.shadow.camera.left = -900;
-sun.shadow.camera.right = 900;
-sun.shadow.camera.top = 900;
-sun.shadow.camera.bottom = -900;
-sun.shadow.camera.updateProjectionMatrix();
-sun.shadow.bias = -0.00035;
-sun.shadow.normalBias = 0.02;
+sun.shadow.camera.near = 8;
+sun.shadow.camera.far = 1400;
+sun.shadow.bias = -0.00045;
+sun.shadow.normalBias = 0.05;
+sun.shadow.radius = 3.5;
+const fill = new THREE.DirectionalLight(0xd5e4f4, 0.42);
+fill.position.set(-380, 240, -260);
+scene.add(fill);
+fitShadow(controls.target, 220);
 scene.add(sun);
 scene.add(sun.target);
 
 const sunDir = new THREE.Vector3();
-const dayZenith = new THREE.Color(0x2f86e6);
-const dayHorizon = new THREE.Color(0xb7e4fb);
-const nightZenith = new THREE.Color(0x07101f);
-const nightHorizon = new THREE.Color(0x1a2744);
-const warm = new THREE.Color(0xffb07a);
-const sunNoon = new THREE.Color(0xfff7ea);
-const dayFog = new THREE.Color(0xc5e6f8);
+const dayZenith = new THREE.Color(0x7eb6e6);
+const dayHorizon = new THREE.Color(0xe7f2fb);
+const nightZenith = new THREE.Color(0x070b12);
+const nightHorizon = new THREE.Color(0x1a2230);
+const warm = new THREE.Color(0xffb57a);
+const sunNoon = new THREE.Color(0xfff6ea);
 
 const sky = createSky();
 scene.add(sky.mesh);
@@ -81,7 +77,6 @@ let walking = false;
 let rotating = false;
 let fly = null;
 let campus = null;
-let life = null;
 let blockers = [];
 let terrainY = () => 0;
 
@@ -93,6 +88,38 @@ const walkState = {
   lx: 0,
   ly: 0,
 };
+
+function makeEnv(gl) {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 32;
+  const g = c.getContext('2d');
+  const grd = g.createLinearGradient(0, 0, 0, 32);
+  grd.addColorStop(0, '#7eb6e6');
+  grd.addColorStop(0.42, '#d5e6f6');
+  grd.addColorStop(0.74, '#e7f1fb');
+  grd.addColorStop(1, '#c5d4bc');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 64, 32);
+  const tex = new THREE.CanvasTexture(c);
+  tex.mapping = THREE.EquirectangularReflectionMapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const pmrem = new THREE.PMREMGenerator(gl);
+  const env = pmrem.fromEquirectangular(tex).texture;
+  tex.dispose();
+  pmrem.dispose();
+  return env;
+}
+
+function fitShadow(anchor, span) {
+  const s = THREE.MathUtils.clamp(span, 70, 480);
+  const cam = sun.shadow.camera;
+  cam.left = -s;
+  cam.right = s;
+  cam.top = s;
+  cam.bottom = -s;
+  cam.updateProjectionMatrix();
+}
 
 function createSky() {
   const geo = new THREE.BufferGeometry();
@@ -127,15 +154,45 @@ function createSky() {
       uniform mat4 uInvProj;
       uniform mat4 uCamWorld;
       varying vec2 vNdc;
+      float hash(vec2 p) {
+        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+      }
+      float noise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        float a = hash(i);
+        float b = hash(i + vec2(1.0, 0.0));
+        float c = hash(i + vec2(0.0, 1.0));
+        float d = hash(i + vec2(1.0, 1.0));
+        return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+      }
+      float fbm(vec2 p) {
+        float v = 0.0;
+        float a = 0.5;
+        for (int i = 0; i < 4; i++) {
+          v += a * noise(p);
+          p = p * 2.05 + vec2(1.7, 9.2);
+          a *= 0.5;
+        }
+        return v;
+      }
       void main() {
         vec4 far = uInvProj * vec4(vNdc, 1.0, 1.0);
         vec3 dir = normalize(mat3(uCamWorld) * (far.xyz / far.w));
-        float h = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
-        vec3 col = mix(uHorizon, uZenith, pow(h, 0.85));
+        float elev = clamp(dir.y, 0.0, 1.0);
+        float h = pow(elev, 0.52);
+        vec3 col = mix(uHorizon, uZenith, h);
+        float dust = exp(-elev * 8.0);
+        col = mix(col, uGlow, dust * 0.16 * uDay);
+        float skyMask = smoothstep(0.015, 0.16, dir.y);
+        vec2 cuv = dir.xz / (dir.y + 0.22);
+        float cloud = smoothstep(0.46, 0.74, fbm(cuv * 1.55));
+        col = mix(col, vec3(0.95, 0.96, 0.97), cloud * 0.78 * skyMask * uDay);
         float sun = pow(max(dot(dir, uSunDir), 0.0), 90.0);
-        col += uGlow * sun * (0.25 + 0.45 * uDay);
+        col += uGlow * sun * (0.22 + 0.4 * uDay);
         float stars = step(0.9975, fract(sin(dot(floor(dir * 700.0), vec3(12.9, 78.2, 37.7))) * 43758.5));
-        col += vec3(0.85) * stars * smoothstep(0.45, 0.8, h) * (1.0 - uDay);
+        col += vec3(0.85) * stars * smoothstep(0.45, 0.8, elev) * (1.0 - uDay);
         gl_FragColor = vec4(col, 1.0);
       }
     `,
@@ -159,27 +216,25 @@ function applyHour(next) {
   const sunset = Math.max(0, 1 - Math.abs(elevation) / 0.38) * (0.35 + 0.65 * day);
   sunDir.set(Math.cos(angle), Math.max(0.08, elevation), 0.42).normalize();
   const anchor = walking ? camera.position : controls.target;
-  sun.position.copy(anchor).addScaledVector(sunDir, 900);
+  const span = walking ? 90 : camera.position.distanceTo(anchor) * 0.9;
+  fitShadow(anchor, span);
+  sun.position.copy(anchor).addScaledVector(sunDir, THREE.MathUtils.clamp(span, 70, 480) * 2.4);
   sun.target.position.copy(anchor);
-  sun.intensity = 0.05 + 3.25 * day;
-  sun.color.copy(warm).lerp(sunNoon, 1 - sunset * 0.85);
-  hemi.intensity = 0.1 + 0.58 * day;
-  hemi.color.copy(nightHorizon).lerp(new THREE.Color(0xd7ecff), day);
-  hemi.groundColor.copy(nightHorizon).lerp(new THREE.Color(0x5d8a3e), day);
-  fill.intensity = 0.04 + 0.3 * day;
+  sun.intensity = 0.05 + 2.05 * day;
+  sun.color.copy(warm).lerp(sunNoon, 1 - sunset);
+  hemi.intensity = 0.16 + 0.72 * day;
+  fill.intensity = 0.1 + 0.46 * day;
+  hemi.color.copy(nightHorizon).lerp(dayHorizon, day);
   sky.uniforms.uSunDir.value.copy(sunDir);
   sky.uniforms.uDay.value = day;
   sky.uniforms.uZenith.value.copy(nightZenith).lerp(dayZenith, day);
   sky.uniforms.uHorizon.value.copy(nightHorizon).lerp(dayHorizon, day);
-  sky.uniforms.uHorizon.value.lerp(warm, sunset * 0.35);
-  sky.uniforms.uGlow.value.copy(sunNoon).lerp(warm, sunset);
-  scene.fog.color.copy(dayFog).lerp(nightHorizon, night);
-  scene.fog.color.lerp(warm, sunset * 0.18);
-  scene.fog.density = 0.000055 + night * 0.0002;
+  sky.uniforms.uHorizon.value.lerp(warm, sunset * 0.45);
+  sky.uniforms.uGlow.value.copy(warm);
+  scene.fog.color.copy(sky.uniforms.uHorizon.value);
   scene.background.copy(scene.fog.color);
-  renderer.toneMappingExposure = 0.72 + 0.42 * day;
   if (campus?.facades) {
-    for (const mat of campus.facades) mat.emissiveIntensity = 0.03 + night * 0.95;
+    for (const mat of campus.facades) mat.emissiveIntensity = 0.03 + night * 0.85;
   }
   const h = Math.floor(hour);
   const m = Math.floor((hour % 1) * 60);
@@ -189,16 +244,6 @@ function applyHour(next) {
   const nightBtn = document.getElementById('night');
   dayBtn.setAttribute('aria-pressed', day > 0.55 ? 'true' : 'false');
   nightBtn.setAttribute('aria-pressed', day < 0.35 ? 'true' : 'false');
-}
-
-function syncControls() {
-  controls._sphericalDelta.set(0, 0, 0);
-  controls._panOffset.set(0, 0, 0);
-  controls._scale = 1;
-  const damping = controls.enableDamping;
-  controls.enableDamping = false;
-  controls.update();
-  controls.enableDamping = damping;
 }
 
 function setActive(name) {
@@ -211,11 +256,13 @@ function flyTo(view, { animate = true } = {}) {
   if (!view) return Promise.resolve();
   rotating = false;
   controls.autoRotate = false;
-  syncControls();
+  const nextFov = view.fov || camera.fov;
   if (!animate) {
     camera.position.set(...view.pos);
+    camera.fov = nextFov;
+    camera.updateProjectionMatrix();
     controls.target.set(...view.target);
-    syncControls();
+    controls.update();
     fly = null;
     return Promise.resolve();
   }
@@ -223,16 +270,20 @@ function flyTo(view, { animate = true } = {}) {
   const fromT = controls.target.clone();
   const toP = new THREE.Vector3(...view.pos);
   const toT = new THREE.Vector3(...view.target);
-  const travel = fromP.distanceTo(toP) + fromT.distanceTo(toT);
+  const fromFov = camera.fov;
   const t0 = performance.now();
-  controls.enabled = false;
   return new Promise((resolve) => {
-    fly = { fromP, fromT, toP, toT, t0, ms: THREE.MathUtils.clamp(700 + travel * 0.45, 850, 1600), resolve };
+    fly = { fromP, fromT, toP, toT, fromFov, toFov: nextFov, t0, ms: 1200, resolve };
   });
 }
 
 function go(name, animate = true) {
   if (!campus) return Promise.resolve();
+  if (name === 'walk') {
+    setActive('');
+    setWalk(true, campus.views.walk);
+    return Promise.resolve();
+  }
   if (walking) setWalk(false);
   if (name === 'rotate') {
     setActive('rotate');
@@ -256,7 +307,10 @@ function makeLabel(lm) {
   btn.innerHTML = `<span class="pin-tick"></span><span class="pin-name">${lm.label}</span>${sub}`;
   btn.addEventListener('click', (ev) => {
     ev.stopPropagation();
-    const preset = lm.preset || (lm.id === 'falvey' ? 'library' : null);
+    const preset =
+      lm.preset ||
+      { falvey: 'library', pavilion: 'pavilion', law: 'library', quad: 'quad' }[lm.id] ||
+      null;
     if (preset && campus.views[preset]) go(preset);
     else {
       const ground = terrainY(lm.x, lm.z);
@@ -269,7 +323,8 @@ function makeLabel(lm) {
   });
   const obj = new CSS2DObject(btn);
   const ground = terrainY(lm.x, lm.z);
-  const lift = lm.id === 'church' ? Math.max(lm.h, 30) + 8 : Math.max(lm.h, 6) + 7;
+  const roof = lm.id === 'church' ? Math.min(lm.h || 16, 18) : Math.max(6, Math.min(lm.h || 10, 22));
+  const lift = roof + 3.5;
   obj.position.set(lm.x, ground + lift, lm.z);
   obj.center.set(0.5, 1);
   return obj;
@@ -282,7 +337,7 @@ function blocked(x, z) {
   return false;
 }
 
-function setWalk(on) {
+function setWalk(on, pose) {
   walking = on;
   document.getElementById('walk').setAttribute('aria-pressed', on ? 'true' : 'false');
   document.getElementById('walk-help').classList.toggle('show', on);
@@ -291,20 +346,18 @@ function setWalk(on) {
   controls.enabled = !on;
   controls.autoRotate = !on && rotating;
   if (on) {
-    const spot = campus?.walkAnchor || controls.target;
-    let x = spot.x;
-    let z = spot.z;
-    if (blocked(x, z) && campus?.walkAnchor) {
-      x = campus.walkAnchor.x;
-      z = campus.walkAnchor.z;
+    if (pose?.pos) {
+      camera.position.set(pose.pos[0], pose.pos[1], pose.pos[2]);
+      camera.fov = pose.fov || 62;
+      camera.updateProjectionMatrix();
+      walkState.yaw = pose.yaw ?? 0;
+      walkState.pitch = -0.03;
+    } else {
+      const ground = terrainY(controls.target.x, controls.target.z);
+      camera.position.set(controls.target.x, ground + 1.68, controls.target.z + 0.01);
+      walkState.yaw = Math.atan2(camera.position.x - controls.target.x, camera.position.z - controls.target.z);
+      walkState.pitch = -0.04;
     }
-    const ground = terrainY(x, z);
-    const face = campus?.views?.church?.target;
-    const faceX = Array.isArray(face) ? face[0] : controls.target.x;
-    const faceZ = Array.isArray(face) ? face[2] : controls.target.z;
-    camera.position.set(x, ground + 1.68, z);
-    walkState.yaw = Math.atan2(camera.position.x - faceX, camera.position.z - faceZ);
-    walkState.pitch = -0.02;
   }
 }
 
@@ -428,18 +481,21 @@ function animate() {
     const e = t * t * (3 - 2 * t);
     camera.position.lerpVectors(fly.fromP, fly.toP, e);
     controls.target.lerpVectors(fly.fromT, fly.toT, e);
+    if (fly.toFov) {
+      camera.fov = THREE.MathUtils.lerp(fly.fromFov, fly.toFov, e);
+      camera.updateProjectionMatrix();
+    }
     if (t >= 1) {
       const done = fly.resolve;
-      camera.position.copy(fly.toP);
-      controls.target.copy(fly.toT);
       fly = null;
-      controls.enabled = !walking;
-      syncControls();
+      controls.enableDamping = false;
+      controls.update();
+      controls.enableDamping = true;
       done();
     }
   } else if (!walking) controls.update();
   else updateWalk(dt);
-  life?.update(dt, 1 - sky.uniforms.uDay.value);
+  if (campus?.update) campus.update(dt, 1 - sky.uniforms.uDay.value);
   applyHour(hour);
   renderer.render(scene, camera);
   labelRenderer.render(scene, camera);
@@ -453,20 +509,17 @@ async function main() {
   const data = await res.json();
   annotateCrossings(data);
   terrainY = makeTerrain(data.terrain);
-  const materials = createMaterials(createFacadeTextures());
+  scene.environment = makeEnv(renderer);
+  const materials = createMaterials(createTextures());
   const built = buildCampus(data, terrainY, materials);
   scene.add(built.group);
   blockers = built.blockers;
   const framed = buildViews(data, terrainY);
   const views = framed.views;
-  life = createCampusLife(data, terrainY, scene, { blocked: (x, z) => blocked(x, z) });
-  campus = {
-    views,
-    facades: materials.facadeList,
-    data,
-    walkAnchor: framed.anchor,
-    life,
-  };
+  campus = { views, facades: materials.facadeList, data, update: built.update };
+  const params = new URLSearchParams(location.search);
+  if (params.get('clean') === '1') labelRenderer.domElement.style.display = 'none';
+  if (params.get('hour')) applyHour(Number(params.get('hour')));
   for (const lm of data.landmarks || []) {
     if (!lm.label) continue;
     scene.add(makeLabel(lm));
@@ -478,30 +531,21 @@ async function main() {
     library: 'falvey',
     pavilion: 'pavilion',
     station: 'station',
-    lancaster: 'station',
   };
   for (const btn of nav.querySelectorAll('button')) {
     const id = presetIds[btn.dataset.view];
     if (id && !views[btn.dataset.view]) btn.disabled = true;
   }
-  const params = new URLSearchParams(location.search);
-  if (params.get('clean') === '1') document.body.dataset.clean = '1';
-  if (params.get('hour')) applyHour(Number(params.get('hour')));
-  const counts = life.counts();
-  layersEl.textContent = `${data.buildings.length} buildings · ${data.roads.length} roads · ${counts.cars} cars · ${counts.peds} walkers`;
+  const heightTagged = (data.buildings || []).filter((b) => b.hs === 'height' || b.hs === 'levels').length;
+  layersEl.textContent = `${data.buildings.length} buildings · ${data.roads.length} roads · ${data.paths.length} paths · ${heightTagged} tagged heights`;
   const initial = params.get('view') || 'aerial';
-  const viewName = initial === 'walk' ? 'quad' : initial;
-  await go(campus.views[viewName] ? viewName : 'aerial', false);
-  if (params.get('walk') === '1' || initial === 'walk') setWalk(true);
+  if (initial === 'walk' || params.get('walk') === '1') await go('walk', false);
+  else await go(campus.views[initial] ? initial : 'aerial', false);
   loader.classList.add('hidden');
   document.body.dataset.ready = '1';
   window.__campus = {
     ready: true,
     setView: (name) => go(name, false),
-    setWalk: (on) => setWalk(on),
-    setHour: (h) => applyHour(h),
-    counts: () => life.counts(),
-    anchor: framed.anchor,
   };
 }
 
