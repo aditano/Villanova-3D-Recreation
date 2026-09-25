@@ -116,10 +116,7 @@ async function shoot(view) {
       mobile: false,
     });
     const url = new URL(base);
-    url.searchParams.set('view', view === 'walk' ? 'quad' : view);
-    url.searchParams.set('clean', '1');
-    url.searchParams.set('hour', '15.15');
-    if (view === 'walk') url.searchParams.set('walk', '1');
+    url.searchParams.set('view', view);
     await call('Page.navigate', { url: url.toString() });
     const started = Date.now();
     let ready = false;
@@ -144,7 +141,10 @@ async function shoot(view) {
       await sleep(400);
     }
     if (!ready) throw new Error(`${view} never became ready ${lastNote}`);
-    await sleep(view === 'walk' || view === 'lancaster' ? 1600 : 1100);
+    await call('Runtime.evaluate', {
+      expression: `document.querySelectorAll('.hud-tl,.hud-tr,.hud-nav,.tools,.walk-help,.walk-pad,.loader').forEach((el)=>{el.style.visibility='hidden';});`,
+    });
+    await sleep(Number(process.env.SHOT_SETTLE_MS || 900));
     const shot = await call('Page.captureScreenshot', { format: 'png' });
     const file = `${outDir}/${view}.png`;
     writeFileSync(file, Buffer.from(shot.data, 'base64'));
