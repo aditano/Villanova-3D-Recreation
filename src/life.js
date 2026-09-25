@@ -19,35 +19,38 @@ function densify(pts, step) {
   return out;
 }
 
-function carBody() {
-  const body = new THREE.BoxGeometry(4.15, 0.72, 1.72);
-  body.translate(0, 0.72, 0);
-  const cabin = new THREE.BoxGeometry(2.15, 0.62, 1.52);
-  cabin.translate(-0.15, 1.28, 0);
-  const geo = BufferGeometryUtilsMerge([body, cabin]);
-  return geo;
-}
-
-function BufferGeometryUtilsMerge(geos) {
+/** De-index, then concatenate. Box and cylinder primitives are indexed; copying only `position` drops triangles. */
+export function mergeBufferGeometries(geos) {
+  const parts = [];
   let count = 0;
-  for (const g of geos) count += g.attributes.position.count;
+  for (const g of geos) {
+    if (!g.getAttribute('normal')) g.computeVertexNormals();
+    const index = g.getIndex();
+    const pos = g.getAttribute('position');
+    const nrm = g.getAttribute('normal');
+    const n = index ? index.count : pos.count;
+    const positions = new Float32Array(n * 3);
+    const normals = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const vi = index ? index.getX(i) : i;
+      positions[i * 3] = pos.getX(vi);
+      positions[i * 3 + 1] = pos.getY(vi);
+      positions[i * 3 + 2] = pos.getZ(vi);
+      normals[i * 3] = nrm.getX(vi);
+      normals[i * 3 + 1] = nrm.getY(vi);
+      normals[i * 3 + 2] = nrm.getZ(vi);
+    }
+    parts.push({ positions, normals, n });
+    count += n;
+    g.dispose();
+  }
   const pos = new Float32Array(count * 3);
   const nrm = new Float32Array(count * 3);
-  let o = 0;
-  for (const g of geos) {
-    g.computeVertexNormals();
-    const p = g.attributes.position;
-    const n = g.attributes.normal;
-    for (let i = 0; i < p.count; i++) {
-      pos[(o + i) * 3] = p.getX(i);
-      pos[(o + i) * 3 + 1] = p.getY(i);
-      pos[(o + i) * 3 + 2] = p.getZ(i);
-      nrm[(o + i) * 3] = n.getX(i);
-      nrm[(o + i) * 3 + 1] = n.getY(i);
-      nrm[(o + i) * 3 + 2] = n.getZ(i);
-    }
-    o += p.count;
-    g.dispose();
+  let offset = 0;
+  for (const part of parts) {
+    pos.set(part.positions, offset);
+    nrm.set(part.normals, offset);
+    offset += part.n * 3;
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
@@ -55,33 +58,34 @@ function BufferGeometryUtilsMerge(geos) {
   return geo;
 }
 
-function wheelGeo() {
-  const geo = new THREE.CylinderGeometry(0.32, 0.32, 0.22, 10);
-  geo.rotateZ(Math.PI / 2);
-  const positions = [];
-  const normals = [];
+export function carBodyGeometry() {
+  const body = new THREE.BoxGeometry(4.15, 0.72, 1.72);
+  body.translate(0, 0.72, 0);
+  const cabin = new THREE.BoxGeometry(2.15, 0.62, 1.52);
+  cabin.translate(-0.15, 1.28, 0);
+  return mergeBufferGeometries([body, cabin]);
+}
+
+export function wheelGeometry() {
+  const wheels = [];
   for (const [x, z] of [
     [1.25, 0.78],
     [1.25, -0.78],
     [-1.25, 0.78],
     [-1.25, -0.78],
   ]) {
-    const g = geo.clone();
-    g.translate(x, 0.32, z);
-    g.computeVertexNormals();
-    const p = g.attributes.position;
-    const n = g.attributes.normal;
-    for (let i = 0; i < p.count; i++) {
-      positions.push(p.getX(i), p.getY(i), p.getZ(i));
-      normals.push(n.getX(i), n.getY(i), n.getZ(i));
-    }
-    g.dispose();
+    const geo = new THREE.CylinderGeometry(0.32, 0.32, 0.22, 10);
+    // Axle along local Z so the tire rolls on the local +X length axis.
+    geo.rotateX(Math.PI / 2);
+    geo.translate(x, 0.32, z);
+    wheels.push(geo);
   }
-  geo.dispose();
-  const out = new THREE.BufferGeometry();
-  out.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  out.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-  return out;
+  return mergeBufferGeometries(wheels);
+}
+
+/** Local +X is the vehicle length axis. `dirX`/`dirZ` are the travel direction in world XZ. */
+export function vehicleYaw(dirX, dirZ) {
+  return Math.atan2(-dirZ, dirX);
 }
 
 const COLORS = [0xf2f2f0, 0xc5c8cc, 0x8d9398, 0x1d3557, 0x6e2430, 0xd8d2c4, 0x2c2f33];
@@ -157,7 +161,7 @@ export function buildLife(data, yAt, materials) {
       const z = b[1] + dirx * lat;
       if (insideBuildings(x, z, buildings)) continue;
       if (!arterial && hash01(x, z) < 0.42) continue;
-      const yaw = Math.atan2(dirx * side, dirz * side);
+      const yaw = vehicleYaw(dirx * side, dirz * side);
       const y = yAt(x, z) + SURFACE.asphalt + pointLift(road.pts, road.lift, x, z);
       const color = COLORS[Math.floor(hash01(x + 3, z) * COLORS.length) % COLORS.length];
       if (cars.length < 640) cars.push({ x, y, z, yaw, color, sx: 0.92 + hash01(z, x) * 0.16 });
@@ -175,8 +179,8 @@ export function buildLife(data, yAt, materials) {
   const total = reserved + movers.length;
   const bodyMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.45, metalness: 0.35, envMapIntensity: 0.45 });
   const wheelMat = new THREE.MeshStandardMaterial({ color: 0x1a1c1e, roughness: 0.7, metalness: 0.15 });
-  const bodyMesh = new THREE.InstancedMesh(carBody(), bodyMat, Math.max(1, total));
-  const wheelMesh = new THREE.InstancedMesh(wheelGeo(), wheelMat, Math.max(1, total));
+  const bodyMesh = new THREE.InstancedMesh(carBodyGeometry(), bodyMat, Math.max(1, total));
+  const wheelMesh = new THREE.InstancedMesh(wheelGeometry(), wheelMat, Math.max(1, total));
   bodyMesh.count = total;
   wheelMesh.count = total;
   bodyMesh.castShadow = true;
@@ -460,7 +464,7 @@ export function buildLife(data, yAt, materials) {
         const lat = trunk.half * 0.42 * mv.side;
         const x = p.x - p.dz * lat;
         const z = p.z + p.dx * lat;
-        const yaw = Math.atan2(p.dx * mv.side, p.dz * mv.side);
+        const yaw = vehicleYaw(p.dx * mv.side, p.dz * mv.side);
         syncCar(reserved + k, {
           x,
           y: yAt(x, z) + SURFACE.asphalt + pointLift(trunk.source, trunk.lifts, x, z),

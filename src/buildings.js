@@ -106,10 +106,12 @@ function collectWindows(edge, y0, y1, spec, acc, stride) {
       const z = edge.az + edge.dz * along + edge.nz * 0.02;
       const yaw = Math.atan2(edge.nx, edge.nz);
       const out = 0.52;
+      // Walls are solid quads. Keep the pane on the outside face, inside the projecting frame.
+      const pane = 0.14;
       acc.glass.push({
-        x: x - edge.nx * 0.28,
+        x: x + edge.nx * pane,
         y: gy,
-        z: z - edge.nz * 0.28,
+        z: z + edge.nz * pane,
         yaw,
         sx: gw * 0.76,
         sy: gh * 0.9,
@@ -278,11 +280,13 @@ function addRibs(trim, edges, y0, y1, spacing) {
   }
 }
 
+/** `y0` and `eave` are absolute elevations. `eave` is the wall top and the roof spring line. */
 function stackShell(parts, ring, y0, eave, spec, acc, opts = {}) {
   const { walls, trim } = parts;
   const edges = edgesOf(ring);
   if (edges.length < 3) return null;
-  const baseH = Math.min(opts.baseH ?? 1.05, Math.max(0.6, eave * 0.16));
+  const height = Math.max(0.4, eave - y0);
+  const baseH = Math.min(opts.baseH ?? 1.05, Math.max(0.6, height * 0.16));
   const parapet = opts.pitched ? 0 : opts.parapet ?? 1.15;
   const cornice = opts.pitched ? 0 : opts.cornice ?? 0.95;
   const shaftTop = eave - parapet - cornice;
@@ -321,7 +325,7 @@ function buildStock(b, yAt, parts, acc, kind) {
     rectangular &&
     (kind === 'gothic' || kind === 'house' || kind === 'dorm' || (kind === 'block' && b.h < 11 && frame.width < 22));
   const rise = pitched ? Math.min(5.2, Math.max(2.2, frame.width * 0.26)) : 0;
-  const eave = pitched ? Math.max(4.2, b.h - rise) : b.h;
+  const eave = y0 + (pitched ? Math.max(4.2, b.h - rise) : b.h);
   const walls = parts.walls[fam];
   const shell = stackShell({ ...parts, walls }, ring, y0, eave, spec, acc, {
     pitched,
@@ -336,13 +340,13 @@ function buildStock(b, yAt, parts, acc, kind) {
     basePush: 0.28,
     baseH: 1.2,
   });
-  if (pitched) addPitched(walls, parts.slate, frame, y0 + eave, rise);
+  if (pitched) addPitched(walls, parts.slate, frame, eave, rise);
   else {
-    capRoof(parts.membrane, ring, y0 + eave + 0.06, -1.12);
-    if (shell?.edges) band(parts.trim, shell.edges, y0 + eave - 0.2, y0 + eave + 0.2, 0.1, 1.05);
+    capRoof(parts.membrane, ring, eave + 0.06, -1.12);
+    if (shell?.edges) band(parts.trim, shell.edges, eave - 0.2, eave + 0.2, 0.1, 1.05);
     if (b.h >= 9 && frame.length > 16) {
       const [cx, cz] = ringCentroid(ring);
-      addBox(parts.mech, cx, y0 + eave + 0.7, cz, Math.min(8, frame.length * 0.18), 1.15, Math.min(5, frame.width * 0.22), 0.4);
+      addBox(parts.mech, cx, eave + 0.7, cz, Math.min(8, frame.length * 0.18), 1.15, Math.min(5, frame.width * 0.22), 0.4);
     }
   }
 }
@@ -772,28 +776,37 @@ export function buildStructures(data, yAt, materials) {
 
   for (const [name, buf] of Object.entries(parts.walls)) {
     const mesh = meshFrom(buf, materials.families[name]);
-    if (mesh) group.add(mesh);
+    if (mesh) {
+      mesh.name = `walls:${name}`;
+      group.add(mesh);
+    }
   }
   const staticMeshes = [
-    [parts.trim, materials.trim],
-    [parts.membrane, materials.roof],
-    [parts.slate, materials.slate],
-    [parts.mech, materials.steel],
-    [parts.seats, materials.seat],
-    [parts.fascia, materials.fascia],
-    [parts.field, materials.field, { cast: false }],
-    [parts.glass, materials.glass],
-    [parts.concrete, materials.concrete, { cast: false }],
-    [parts.spire, materials.spire],
+    [parts.trim, materials.trim, { name: 'trim' }],
+    [parts.membrane, materials.roof, { name: 'roof-membrane' }],
+    [parts.slate, materials.slate, { name: 'roof-slate' }],
+    [parts.mech, materials.steel, { name: 'mech' }],
+    [parts.seats, materials.seat, { name: 'seats' }],
+    [parts.fascia, materials.fascia, { name: 'fascia' }],
+    [parts.field, materials.field, { cast: false, name: 'field' }],
+    [parts.glass, materials.glass, { name: 'curtain' }],
+    [parts.concrete, materials.concrete, { cast: false, name: 'concrete' }],
+    [parts.spire, materials.spire, { name: 'spire' }],
   ];
   for (const [buf, mat, opts] of staticMeshes) {
     const mesh = meshFrom(buf, mat, opts);
-    if (mesh) group.add(mesh);
+    if (mesh) {
+      mesh.name = opts?.name || '';
+      group.add(mesh);
+    }
   }
 
   const glassMesh = makeInstances(new THREE.BoxGeometry(1, 1, 1), materials.glass, acc.glass);
   const sillMesh = makeInstances(new THREE.BoxGeometry(1, 1, 1), materials.trim, acc.sill);
-  if (glassMesh) group.add(glassMesh);
+  if (glassMesh) {
+    glassMesh.name = 'window-glass';
+    group.add(glassMesh);
+  }
   if (sillMesh) {
     sillMesh.castShadow = true;
     group.add(sillMesh);
