@@ -117,6 +117,8 @@ async function shoot(view) {
     });
     const url = new URL(base);
     url.searchParams.set('view', view);
+    url.searchParams.set('clean', '1');
+    url.searchParams.set('hour', '15.15');
     await call('Page.navigate', { url: url.toString() });
     const started = Date.now();
     let ready = false;
@@ -142,7 +144,7 @@ async function shoot(view) {
     }
     if (!ready) throw new Error(`${view} never became ready ${lastNote}`);
     await call('Runtime.evaluate', {
-      expression: `document.querySelectorAll('.hud-tl,.hud-tr,.hud-nav,.tools,.walk-help,.walk-pad,.loader').forEach((el)=>{el.style.visibility='hidden';});`,
+      expression: `document.querySelectorAll('.hud-tl,.hud-tr,.hud-nav,.tools,.walk-help,.walk-pad,.loader,.label-layer').forEach((el)=>{el.style.visibility='hidden';});`,
     });
     await sleep(Number(process.env.SHOT_SETTLE_MS || 900));
     const shot = await call('Page.captureScreenshot', { format: 'png' });

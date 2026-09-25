@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
 import { buildCampus } from './campus.js';
-import { computeViews } from './cameras.js';
+import { buildViews } from './cameras.js';
+import { annotateCrossings } from './crossings.js';
 import { makeTerrain, pointInPoly } from './geo.js';
 import { createMaterials } from './materials.js';
 import { createTextures } from './textures.js';
@@ -20,7 +21,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 1.14;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const labelRenderer = new CSS2DRenderer();
@@ -29,8 +30,8 @@ labelRenderer.domElement.className = 'label-layer';
 document.getElementById('app').appendChild(labelRenderer.domElement);
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0xc5dff6, 0.00018);
-scene.background = new THREE.Color(0xc5dff6);
+scene.fog = new THREE.FogExp2(0xc5e6f8, 0.00004);
+scene.background = new THREE.Color(0x8ec8f0);
 
 const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.35, 5000);
 camera.position.set(40, 420, 380);
@@ -43,7 +44,7 @@ controls.minDistance = 6;
 controls.maxDistance = 2200;
 controls.target.set(0, 8, 0);
 
-const hemi = new THREE.HemisphereLight(0xc5dff6, 0x3d5a32, 0.55);
+const hemi = new THREE.HemisphereLight(0xd7ecff, 0x3c7a34, 0.7);
 scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff3e4, 2.5);
 sun.castShadow = true;
@@ -67,7 +68,7 @@ const sunNoon = new THREE.Color(0xfff6ea);
 const sky = createSky();
 scene.add(sky.mesh);
 
-let hour = 15.4;
+let hour = 15.15;
 let walking = false;
 let rotating = false;
 let fly = null;
@@ -286,7 +287,8 @@ function makeLabel(lm) {
   });
   const obj = new CSS2DObject(btn);
   const ground = terrainY(lm.x, lm.z);
-  const lift = lm.id === 'church' ? Math.max(lm.h, 30) + 8 : Math.max(lm.h, 6) + 7;
+  const roof = lm.id === 'church' ? Math.min(lm.h || 16, 18) : Math.max(6, Math.min(lm.h || 10, 22));
+  const lift = roof + 3.5;
   obj.position.set(lm.x, ground + lift, lm.z);
   obj.center.set(0.5, 1);
   return obj;
@@ -422,7 +424,7 @@ nav.addEventListener('click', (ev) => {
 timeInput.addEventListener('input', () => {
   applyHour(Number(timeInput.value));
 });
-document.getElementById('day').addEventListener('click', () => applyHour(15.4));
+document.getElementById('day').addEventListener('click', () => applyHour(15.15));
 document.getElementById('night').addEventListener('click', () => applyHour(21.2));
 document.getElementById('walk').addEventListener('click', () => setWalk(!walking));
 
@@ -469,14 +471,19 @@ async function main() {
   const res = await fetch(`${import.meta.env.BASE_URL}data/villanova.json`);
   if (!res.ok) throw new Error(`campus data ${res.status}`);
   const data = await res.json();
+  annotateCrossings(data);
   terrainY = makeTerrain(data.terrain);
   scene.environment = makeEnv(renderer);
   const materials = createMaterials(createTextures());
   const built = buildCampus(data, terrainY, materials);
   scene.add(built.group);
   blockers = built.blockers;
-  const views = computeViews(data, terrainY);
+  const framed = buildViews(data, terrainY);
+  const views = framed.views;
   campus = { views, facades: materials.facadeList, data, update: built.update };
+  const params = new URLSearchParams(location.search);
+  if (params.get('clean') === '1') labelRenderer.domElement.style.display = 'none';
+  if (params.get('hour')) applyHour(Number(params.get('hour')));
   for (const lm of data.landmarks || []) {
     if (!lm.label) continue;
     scene.add(makeLabel(lm));
@@ -495,8 +502,9 @@ async function main() {
   }
   const heightTagged = (data.buildings || []).filter((b) => b.hs === 'height' || b.hs === 'levels').length;
   layersEl.textContent = `${data.buildings.length} buildings · ${data.roads.length} roads · ${data.paths.length} paths · ${heightTagged} tagged heights`;
-  const initial = new URLSearchParams(location.search).get('view') || 'aerial';
-  await go(campus.views[initial] ? initial : 'aerial', false);
+  const initial = params.get('view') || 'aerial';
+  if (initial === 'walk' || params.get('walk') === '1') await go('walk', false);
+  else await go(campus.views[initial] ? initial : 'aerial', false);
   loader.classList.add('hidden');
   document.body.dataset.ready = '1';
   window.__campus = {

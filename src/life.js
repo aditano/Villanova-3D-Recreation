@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { hash01, pointInPoly } from './geo.js';
-import { SURFACE, roadProfile } from './road-profile.js';
+import { SURFACE, pointLift, roadProfile } from './road-profile.js';
 
 function densify(pts, step) {
   const out = [];
@@ -133,7 +133,7 @@ export function buildLife(data, yAt, materials) {
     let len = 0;
     for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
     if ((road.cls === 'trunk' || road.cls === 'primary') && len > trunkLen) {
-      trunk = { pts, half, len };
+      trunk = { pts, half, len, source: road.pts, lifts: road.lift };
       trunkLen = len;
     }
     const arterial = profile.kind === 'arterial' || profile.kind === 'highway' || profile.kind === 'collector';
@@ -158,7 +158,7 @@ export function buildLife(data, yAt, materials) {
       if (insideBuildings(x, z, buildings)) continue;
       if (!arterial && hash01(x, z) < 0.42) continue;
       const yaw = Math.atan2(dirx * side, dirz * side);
-      const y = yAt(x, z) + SURFACE.asphalt;
+      const y = yAt(x, z) + SURFACE.asphalt + pointLift(road.pts, road.lift, x, z);
       const color = COLORS[Math.floor(hash01(x + 3, z) * COLORS.length) % COLORS.length];
       if (cars.length < 640) cars.push({ x, y, z, yaw, color, sx: 0.92 + hash01(z, x) * 0.16 });
     }
@@ -197,7 +197,15 @@ export function buildLife(data, yAt, materials) {
       const z = pts[i][1];
       if (hash01(x, z) < 0.55) continue;
       if (insideBuildings(x, z, buildings)) continue;
-      people.push({ x, y: yAt(x, z) + 0.9, z, yaw: hash01(z, x) * 6.2, sx: 0.42, sy: 0.9 + hash01(x, z) * 0.15, sz: 0.28 });
+      people.push({
+        x,
+        y: yAt(x, z) + 0.9 + pointLift(path.pts, path.lift, x, z),
+        z,
+        yaw: hash01(z, x) * 6.2,
+        sx: 0.42,
+        sy: 0.9 + hash01(x, z) * 0.15,
+        sz: 0.28,
+      });
     }
   }
   const personGeo = new THREE.CapsuleGeometry(0.5, 1, 3, 6);
@@ -367,7 +375,14 @@ export function buildLife(data, yAt, materials) {
         const x = p.x - p.dz * lat;
         const z = p.z + p.dx * lat;
         const yaw = Math.atan2(p.dx * mv.side, p.dz * mv.side);
-        syncCar(reserved + k, { x, y: yAt(x, z) + SURFACE.asphalt, z, yaw, color: mv.color, sx: 1 });
+        syncCar(reserved + k, {
+          x,
+          y: yAt(x, z) + SURFACE.asphalt + pointLift(trunk.source, trunk.lifts, x, z),
+          z,
+          yaw,
+          color: mv.color,
+          sx: 1,
+        });
       });
       bodyMesh.instanceMatrix.needsUpdate = true;
       wheelMesh.instanceMatrix.needsUpdate = true;

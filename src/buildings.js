@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { footprintBase, pointInPoly, ringCentroid } from './geo.js';
-import { massingFor } from './height-rules.js';
+import { massingFor, resolveBuilding } from './height-rules.js';
 import {
   MeshBuf,
   addBox,
@@ -44,14 +44,28 @@ function classify(b) {
   return 'block';
 }
 
+const FAMILY_ALIAS = {
+  gothic: 'limestone',
+  library: 'limestone',
+  center: 'stone',
+  stone: 'stone',
+  brick: 'brick',
+  glass: 'glass',
+  arena: 'arena',
+  station: 'station',
+  concrete: 'concrete',
+};
+
 function familyName(b, kind) {
   const mass = massingFor(b.n);
   if (mass?.family && FAMILIES[mass.family]) return mass.family;
-  if (kind === 'church' || kind === 'gothic') return 'limestone';
+  if (kind === 'church' || kind === 'gothic' || kind === 'library') return 'limestone';
   if (kind === 'pavilion' || kind === 'arena') return 'arena';
   if (kind === 'station') return 'station';
   if (kind === 'garage') return 'concrete';
   if (kind === 'law') return 'glass';
+  const aliased = FAMILY_ALIAS[b.fam];
+  if (aliased && FAMILIES[aliased]) return aliased;
   if (FAMILIES[b.fam]) return b.fam;
   return 'stone';
 }
@@ -86,29 +100,49 @@ function collectWindows(edge, y0, y1, spec, acc, stride) {
       const t = (bay + 0.5) / bays;
       const along = t * edge.len;
       if (along < 0.45 || edge.len - along < 0.45) continue;
-      const x = edge.ax + edge.dx * along + edge.nx * 0.06;
-      const z = edge.az + edge.dz * along + edge.nz * 0.06;
+      const x = edge.ax + edge.dx * along + edge.nx * 0.04;
+      const z = edge.az + edge.dz * along + edge.nz * 0.04;
       const yaw = Math.atan2(edge.nx, edge.nz);
-      acc.glass.push({ x, y: gy, z, yaw, sx: gw, sy: gh, sz: 0.07 });
+      acc.glass.push({
+        x: x - edge.nx * 0.1,
+        y: gy,
+        z: z - edge.nz * 0.1,
+        yaw,
+        sx: gw * 0.82,
+        sy: gh * 0.9,
+        sz: 0.18,
+      });
       acc.sill.push({
-        x: x + edge.nx * 0.08,
+        x: x + edge.nx * 0.38,
         y: sillY,
-        z: z + edge.nz * 0.08,
+        z: z + edge.nz * 0.38,
         yaw,
-        sx: gw + 0.22,
-        sy: 0.12,
-        sz: 0.42,
+        sx: gw + 0.5,
+        sy: 0.24,
+        sz: 0.86,
       });
       acc.sill.push({
-        x: x + edge.nx * 0.05,
+        x: x + edge.nx * 0.3,
         y: headY,
-        z: z + edge.nz * 0.05,
+        z: z + edge.nz * 0.3,
         yaw,
-        sx: gw + 0.12,
-        sy: 0.08,
-        sz: 0.2,
+        sx: gw + 0.38,
+        sy: 0.2,
+        sz: 0.68,
       });
-      acc.sill.push({ x, y: gy, z, yaw, sx: 0.07, sy: gh * 1.02, sz: 0.11 });
+      const jamb = gw * 0.46;
+      for (const side of [-1, 1]) {
+        acc.sill.push({
+          x: x + edge.dx * jamb * side + edge.nx * 0.28,
+          y: gy,
+          z: z + edge.dz * jamb * side + edge.nz * 0.28,
+          yaw,
+          sx: 0.18,
+          sy: gh + 0.28,
+          sz: 0.62,
+        });
+      }
+      acc.sill.push({ x, y: gy, z, yaw, sx: 0.08, sy: gh, sz: 0.22 });
     }
   }
 }
@@ -184,8 +218,8 @@ function stackShell(parts, ring, y0, eave, spec, acc, opts = {}) {
   const edges = edgesOf(ring);
   if (edges.length < 3) return null;
   const baseH = Math.min(opts.baseH ?? 1.05, Math.max(0.6, eave * 0.16));
-  const parapet = opts.pitched ? 0 : opts.parapet ?? 1.05;
-  const cornice = opts.pitched ? 0 : opts.cornice ?? 0.55;
+  const parapet = opts.pitched ? 0 : opts.parapet ?? 1.15;
+  const cornice = opts.pitched ? 0 : opts.cornice ?? 0.95;
   const shaftTop = eave - parapet - cornice;
   const shaftBase = y0 + baseH;
   band(trim, edges, y0 - 0.4, shaftBase, 0.05, opts.basePush ?? 0.16);
@@ -198,7 +232,7 @@ function stackShell(parts, ring, y0, eave, spec, acc, opts = {}) {
     }
   }
   if (!opts.pitched) {
-    band(trim, edges, shaftTop, shaftTop + cornice, 0.16, opts.cornicePush ?? 0.62);
+    band(trim, edges, shaftTop, shaftTop + cornice, 0.28, opts.cornicePush ?? 1.2);
     shadeWalls(walls, edges, shaftTop + cornice, eave, spec);
   }
   const stride = opts.stride ?? (opts.sparse ? 2 : 1);
@@ -352,8 +386,8 @@ function buildChurch(b, yAt, parts, acc) {
       const along = ((i + 0.5) / count) * edge.len;
       const x = edge.ax + edge.dx * along + edge.nx * 0.7;
       const z = edge.az + edge.dz * along + edge.nz * 0.7;
-      addBox(parts.trim, x, y0 + nave * 0.46, z, 0.72, nave * 0.78, 1.35, yaw);
-      addBox(parts.trim, x + edge.nx * 0.15, y0 + nave * 0.9, z + edge.nz * 0.15, 0.45, 1.5, 0.45, yaw);
+      addBox(parts.trim, x, y0 + nave * 0.48, z, 1.2, nave * 0.88, 2.7, yaw);
+      addBox(parts.trim, x + edge.nx * 0.35, y0 + nave * 0.92, z + edge.nz * 0.35, 0.55, 2.1, 0.7, yaw);
     }
   }
   const [cx, cz] = ringCentroid(ring);
@@ -376,6 +410,33 @@ function buildChurch(b, yAt, parts, acc) {
   }
   addBox(parts.trim, cx, tipY + 0.85, cz, 0.18, 1.7, 0.18);
   addBox(parts.trim, cx, tipY + 1.45, cz, 0.95, 0.16, 0.16);
+  let south = null;
+  for (const edge of edges) {
+    const mz = (edge.az + edge.bz) / 2;
+    if (!south || mz > south.mz) south = { edge, mz };
+  }
+  if (south && south.edge.len > 6) {
+    const edge = south.edge;
+    const yaw = Math.atan2(edge.nx, edge.nz);
+    const mid = edge.len * 0.5;
+    const doorX = edge.ax + edge.dx * mid + edge.nx * 1.7;
+    const doorZ = edge.az + edge.dz * mid + edge.nz * 1.7;
+    addBox(parts.trim, doorX - edge.dx * 2.4, y0 + 3.4, doorZ - edge.dz * 2.4, 0.85, 6.8, 0.9, yaw);
+    addBox(parts.trim, doorX + edge.dx * 2.4, y0 + 3.4, doorZ + edge.dz * 2.4, 0.85, 6.8, 0.9, yaw);
+    addBox(parts.trim, doorX, y0 + 7.1, doorZ, 5.6, 0.5, 0.85, yaw);
+    addBox(parts.trim, doorX, y0 + 8.4, doorZ, 2.2, 2.2, 0.7, yaw);
+    const rose = new THREE.TorusGeometry(1.85, 0.18, 8, 22);
+    rose.rotateY(Math.atan2(edge.nx, edge.nz));
+    rose.translate(doorX + edge.nx * 0.35, y0 + 11.6, doorZ + edge.nz * 0.35);
+    appendGeometry(parts.trim, rose);
+    for (const spoke of [0, Math.PI / 2]) {
+      const bar = new THREE.BoxGeometry(3.3, 0.12, 0.12);
+      bar.rotateZ(spoke);
+      bar.rotateY(yaw);
+      bar.translate(doorX + edge.nx * 0.4, y0 + 11.6, doorZ + edge.nz * 0.4);
+      appendGeometry(parts.trim, bar);
+    }
+  }
   for (let i = 0; i < 4; i++) {
     const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
     const px = cx + Math.cos(a) * 4.15;
@@ -395,7 +456,8 @@ function buildPavilion(b, yAt, parts, acc) {
   const y0 = footprintBase(b.f, yAt);
   const walls = parts.walls.arena;
   const edges = edgesOf(ring);
-  stackShell({ ...parts, walls }, ring, y0, y0 + b.h, spec, acc, {
+  const wallTop = Math.max(14, b.h - mass.arch * 0.55);
+  stackShell({ ...parts, walls }, ring, y0, y0 + wallTop, spec, acc, {
     ribs: true,
     sparse: true,
     belts: false,
@@ -412,8 +474,8 @@ function buildPavilion(b, yAt, parts, acc) {
     const t0 = -0.5 + i / strips;
     const t1 = -0.5 + (i + 1) / strips;
     const arch = (t) => Math.sin((t + 0.5) * Math.PI);
-    const yA = y0 + b.h + mass.arch * arch(t0);
-    const yB = y0 + b.h + mass.arch * arch(t1);
+    const yA = y0 + wallTop + mass.arch * arch(t0);
+    const yB = y0 + wallTop + mass.arch * arch(t1);
     const u0 = t0 * frame.length;
     const u1 = t1 * frame.length;
     parts.membrane.quad(
@@ -592,15 +654,17 @@ export function buildStructures(data, yAt, materials) {
 
   for (const b of buildings) {
     if (!b.f || b.f.length < 4) continue;
-    blockers.push({ f: b.f, h: b.h });
-    const kind = classify(b);
+    const resolved = resolveBuilding(b);
+    const building = { ...b, h: resolved.h, fam: resolved.fam, spire: resolved.spire || b.spire || 0 };
+    blockers.push({ f: building.f, h: building.h });
+    const kind = classify(building);
     try {
-      if (kind === 'church') buildChurch(b, yAt, parts, acc);
-      else if (kind === 'pavilion') buildPavilion(b, yAt, parts, acc);
-      else if (kind === 'station') buildStation(b, yAt, parts, acc, data);
-      else if (kind === 'library') buildLibrary(b, yAt, parts, acc);
-      else if (kind === 'law') buildLaw(b, yAt, parts, acc);
-      else buildStock(b, yAt, parts, acc, kind);
+      if (kind === 'church') buildChurch(building, yAt, parts, acc);
+      else if (kind === 'pavilion') buildPavilion(building, yAt, parts, acc);
+      else if (kind === 'station') buildStation(building, yAt, parts, acc, data);
+      else if (kind === 'library') buildLibrary(building, yAt, parts, acc);
+      else if (kind === 'law') buildLaw(building, yAt, parts, acc);
+      else buildStock(building, yAt, parts, acc, kind);
     } catch (err) {
       console.warn('Building failed', b.n || b.id, err);
     }

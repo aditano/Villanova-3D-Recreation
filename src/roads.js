@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { MeshBuf } from './meshlib.js';
-import { SURFACE, corridorHalf, roadProfile } from './road-profile.js';
+import { SURFACE, corridorHalf, pointLift, roadProfile } from './road-profile.js';
 
 function densify(pts, step) {
   if (!pts || pts.length < 2) return [];
@@ -68,7 +68,7 @@ function buildMiters(pts) {
       nx *= s;
       nz *= s;
     }
-    out.push({ x: pts[i][0], z: pts[i][1], nx, nz, along });
+    out.push({ x: pts[i][0], z: pts[i][1], nx, nz, along, bridge: pts[i].bridge || 0 });
     if (i < n - 1) along += Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
   }
   return out;
@@ -78,7 +78,7 @@ function place(miters, dist, yAt, lift) {
   return miters.map((m) => {
     const x = m.x + m.nx * dist;
     const z = m.z + m.nz * dist;
-    return [x, yAt(x, z) + lift, z, m.along];
+    return [x, yAt(x, z) + lift + (m.bridge || 0), z, m.along];
   });
 }
 
@@ -135,6 +135,12 @@ function disc(buf, x, z, radius, yAt, lift) {
     };
     buf.tri(center, p(a0), p(a1));
   }
+}
+
+function stampBridge(pts, source, lifts) {
+  if (!lifts) return pts;
+  for (const p of pts) p.bridge = pointLift(source, lifts, p[0], p[1]);
+  return pts;
 }
 
 function turnAngle(pts, i) {
@@ -240,7 +246,7 @@ export function buildTransport(data, yAt, materials) {
     const profile = roadProfile(road);
     const dense = densify(road.pts, 7);
     if (dense.length < 2) continue;
-    const grown = extendEnds(dense, Math.min(8, profile.asphalt * 0.45));
+    const grown = stampBridge(extendEnds(dense, Math.min(8, profile.asphalt * 0.45)), road.pts, road.lift);
     paintCarriageway(asphalt, concrete, curb, white, yellow, grown, profile, yAt);
     touch(dense[0][0], dense[0][1], profile, true);
     touch(dense[dense.length - 1][0], dense[dense.length - 1][1], profile, true);
@@ -262,7 +268,8 @@ export function buildTransport(data, yAt, materials) {
     const width = Math.max(path.w || 1.6, 2.15);
     const dense = densify(path.pts, 5);
     if (dense.length < 2) continue;
-    ribbon(pathBuf, buildMiters(extendEnds(dense, 0.6)), -width / 2, width / 2, yAt, SURFACE.path);
+    const grown = stampBridge(extendEnds(dense, 0.6), path.pts, path.lift);
+    ribbon(pathBuf, buildMiters(grown), -width / 2, width / 2, yAt, SURFACE.path);
   }
 
   const ties = [];
