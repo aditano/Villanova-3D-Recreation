@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Villanova · Campus Maquette</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect fill='%230c0e12' width='32' height='32'/%3E%3Cpath d='M16 4 L20 14 H28 L21 20 L24 30 L16 24 L8 30 L11 20 L4 14 H12 Z' fill='none' stroke='%239eb6d4' stroke-width='1.2'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="c"></canvas>
+    </div>
+
+    <header class="hud-tl">
+      <div class="eyebrow">Campus maquette</div>
+      <h1>Villanova</h1>
+      <p class="meta">
+        Procedural halls, quads, and paths from OpenStreetMap. Not an official plan.
+      </p>
+    </header>
+
+    <aside class="hud-tr">
+      <div class="eyebrow">On the model</div>
+      <div id="layers">Loading campus…</div>
+    </aside>
+
+    <section class="tools" aria-label="Light and walk">
+      <div class="tools-row">
+        <span class="eyebrow">Light</span>
+        <output class="clock" id="clock">16:24</output>
+      </div>
+      <input id="time" type="range" min="0" max="24" step="0.01" value="16.8" aria-label="Time of day" />
+      <div class="tools-actions">
+        <button type="button" id="day" aria-pressed="true">Day</button>
+        <button type="button" id="night" aria-pressed="false">Night</button>
+        <button type="button" id="walk" aria-pressed="false">Walk</button>
+      </div>
+    </section>
+
+    <nav class="hud-nav" id="nav" aria-label="Camera presets">
+      <button type="button" data-view="aerial">Aerial</button>
+      <button type="button" data-view="quad">Quad</button>
+      <button type="button" data-view="church">Church</button>
+      <button type="button" data-view="stadium">Stadium</button>
+      <button type="button" data-view="library">Library</button>
+      <button type="button" data-view="station">Station</button>
+      <button type="button" data-view="rotate">Rotate</button>
+    </nav>
+
+    <p class="walk-help" id="walk-help">WASD to move · drag to look · Shift runs · Esc leaves</p>
+    <div class="walk-pad" id="walk-pad" aria-label="Walk controls">
+      <button type="button" class="up" data-key="KeyW" aria-label="Forward">↑</button>
+      <button type="button" class="left" data-key="KeyA" aria-label="Left">←</button>
+      <button type="button" class="down" data-key="KeyS" aria-label="Back">↓</button>
+      <button type="button" class="right" data-key="KeyD" aria-label="Right">→</button>
+      <button type="button" class="run" data-key="ShiftLeft">Run</button>
+    </div>
+
+    <div class="loader" id="loader">
+      <div class="loader-card">
+        <div class="eyebrow">Assembling the campus</div>
+        <div class="loader-bar"><span></span></div>
+      </div>
+    </div>
+
+    <script>
+      window.addEventListener('error', (ev) => {
+        window.__campusError = `${ev.message} @ ${ev.filename}:${ev.lineno}`;
+      });
+      window.addEventListener('unhandledrejection', (ev) => {
+        window.__campusError = String(ev.reason && (ev.reason.stack || ev.reason));
+      });
+    </script>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
