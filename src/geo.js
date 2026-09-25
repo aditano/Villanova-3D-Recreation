@@ -25,6 +25,37 @@ export function ringCentroid(ring) {
   return [x / n, z / n];
 }
 
+/** Area-weighted centroid. Falls back to the vertex mean on a degenerate ring. */
+export function areaCentroid(ring) {
+  const n = ring.length > 1 && Math.hypot(ring[0][0] - ring[ring.length - 1][0], ring[0][1] - ring[ring.length - 1][1]) < 0.05
+    ? ring.length - 1
+    : ring.length;
+  let twice = 0;
+  let cx = 0;
+  let cz = 0;
+  for (let i = 0; i < n; i++) {
+    const p = ring[i];
+    const q = ring[(i + 1) % n];
+    const cross = p[0] * q[1] - q[0] * p[1];
+    twice += cross;
+    cx += (p[0] + q[0]) * cross;
+    cz += (p[1] + q[1]) * cross;
+  }
+  if (Math.abs(twice) < 1e-4) return ringCentroid(ring);
+  return [cx / (3 * twice), cz / (3 * twice)];
+}
+
+export function ringRadius(ring, center) {
+  const n = ring.length > 1 && Math.hypot(ring[0][0] - ring[ring.length - 1][0], ring[0][1] - ring[ring.length - 1][1]) < 0.05
+    ? ring.length - 1
+    : ring.length;
+  let radius = 0;
+  for (let i = 0; i < n; i++) {
+    radius = Math.max(radius, Math.hypot(ring[i][0] - center[0], ring[i][1] - center[1]));
+  }
+  return radius;
+}
+
 export function hash01(x, z) {
   const n = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
   return n - Math.floor(n);

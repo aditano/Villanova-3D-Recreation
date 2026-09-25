@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 const path = join(dirname(fileURLToPath(import.meta.url)), '../public/data/villanova.json');
 const data = JSON.parse(readFileSync(path, 'utf8'));
 
-const required = ['church', 'connelly', 'falvey', 'pavilion', 'mendel', 'tolentine', 'bartley', 'garey', 'law', 'station', 'quad'];
+const required = ['church', 'connelly', 'falvey', 'pavilion', 'mendel', 'tolentine', 'bartley', 'garey', 'law', 'alumni', 'station', 'quad', 'stadium'];
 const ids = new Set((data.landmarks || []).map((l) => l.id));
 const missing = required.filter((id) => !ids.has(id));
 

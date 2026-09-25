@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "data": "node scripts/fetch-campus.mjs",
     "data:refresh": "node scripts/fetch-campus.mjs --refresh",
-    "verify": "node scripts/verify-data.mjs"
+    "verify": "node scripts/verify-data.mjs && node scripts/audit-geography.mjs && node scripts/audit-streets.mjs && node scripts/audit-coverage.mjs && node scripts/audit-cameras.mjs && node scripts/test-campus-life.mjs",
+    "test": "node scripts/test-campus-life.mjs && node scripts/audit-cameras.mjs",
+    "audit": "node scripts/audit-geography.mjs && node scripts/audit-streets.mjs && node scripts/audit-coverage.mjs && node scripts/audit-cameras.mjs"
   },
   "dependencies": {
     "three": "^0.170.0"

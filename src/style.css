@@ -191,6 +191,16 @@ h1 {
   display: none;
 }
 
+body[data-clean='1'] .hud-tl,
+body[data-clean='1'] .hud-tr,
+body[data-clean='1'] .hud-nav,
+body[data-clean='1'] .tools,
+body[data-clean='1'] .label-layer,
+body[data-clean='1'] .walk-help,
+body[data-clean='1'] .walk-pad {
+  display: none !important;
+}
+
 .loader-card {
   text-align: center;
 }

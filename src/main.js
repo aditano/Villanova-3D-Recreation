@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
 import { buildCampus } from './campus.js';
+import { buildViews } from './cameras.js';
+import { createCampusLife } from './campus-life.js';
+import { annotateCrossings } from './crossings.js';
 import { makeTerrain, pointInPoly } from './geo.js';
 import { createFacadeTextures, createMaterials } from './materials.js';
 
@@ -18,7 +21,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.92;
+renderer.toneMappingExposure = 1.12;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const labelRenderer = new CSS2DRenderer();
@@ -27,8 +30,8 @@ labelRenderer.domElement.className = 'label-layer';
 document.getElementById('app').appendChild(labelRenderer.domElement);
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0xc5c9c4, 0.00042);
-scene.background = new THREE.Color(0xc5c9c4);
+scene.fog = new THREE.FogExp2(0xc5e6f8, 0.00007);
+scene.background = new THREE.Color(0x8ec8f0);
 
 const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.35, 5000);
 camera.position.set(40, 420, 380);
@@ -41,9 +44,12 @@ controls.minDistance = 6;
 controls.maxDistance = 2200;
 controls.target.set(0, 8, 0);
 
-const hemi = new THREE.HemisphereLight(0xd5ddd8, 0x2a2620, 0.72);
+const hemi = new THREE.HemisphereLight(0xd4ecff, 0x4f7a38, 0.62);
 scene.add(hemi);
-const sun = new THREE.DirectionalLight(0xfff3e4, 2.5);
+const fill = new THREE.DirectionalLight(0xd7e8ff, 0.28);
+fill.position.set(-520, 240, -360);
+scene.add(fill);
+const sun = new THREE.DirectionalLight(0xfff6e4, 3.15);
 sun.castShadow = true;
 sun.shadow.mapSize.set(window.innerWidth < 800 ? 1024 : 2048, window.innerWidth < 800 ? 1024 : 2048);
 sun.shadow.camera.near = 20;
@@ -59,21 +65,23 @@ scene.add(sun);
 scene.add(sun.target);
 
 const sunDir = new THREE.Vector3();
-const dayZenith = new THREE.Color(0x8b9bab);
-const dayHorizon = new THREE.Color(0xd7dbd6);
-const nightZenith = new THREE.Color(0x070b12);
-const nightHorizon = new THREE.Color(0x1a2230);
-const warm = new THREE.Color(0xffb57a);
-const sunNoon = new THREE.Color(0xfff6ea);
+const dayZenith = new THREE.Color(0x2f86e6);
+const dayHorizon = new THREE.Color(0xb7e4fb);
+const nightZenith = new THREE.Color(0x07101f);
+const nightHorizon = new THREE.Color(0x1a2744);
+const warm = new THREE.Color(0xffb07a);
+const sunNoon = new THREE.Color(0xfff7ea);
+const dayFog = new THREE.Color(0xc5e6f8);
 
 const sky = createSky();
 scene.add(sky.mesh);
 
-let hour = 16.8;
+let hour = 15.15;
 let walking = false;
 let rotating = false;
 let fly = null;
 let campus = null;
+let life = null;
 let blockers = [];
 let terrainY = () => 0;
 
@@ -153,20 +161,25 @@ function applyHour(next) {
   const anchor = walking ? camera.position : controls.target;
   sun.position.copy(anchor).addScaledVector(sunDir, 900);
   sun.target.position.copy(anchor);
-  sun.intensity = 0.06 + 3.35 * day;
-  sun.color.copy(warm).lerp(sunNoon, 1 - sunset);
-  hemi.intensity = 0.08 + 0.38 * day;
-  hemi.color.copy(nightHorizon).lerp(dayHorizon, day);
+  sun.intensity = 0.05 + 3.25 * day;
+  sun.color.copy(warm).lerp(sunNoon, 1 - sunset * 0.85);
+  hemi.intensity = 0.1 + 0.58 * day;
+  hemi.color.copy(nightHorizon).lerp(new THREE.Color(0xd7ecff), day);
+  hemi.groundColor.copy(nightHorizon).lerp(new THREE.Color(0x5d8a3e), day);
+  fill.intensity = 0.04 + 0.3 * day;
   sky.uniforms.uSunDir.value.copy(sunDir);
   sky.uniforms.uDay.value = day;
   sky.uniforms.uZenith.value.copy(nightZenith).lerp(dayZenith, day);
   sky.uniforms.uHorizon.value.copy(nightHorizon).lerp(dayHorizon, day);
-  sky.uniforms.uHorizon.value.lerp(warm, sunset * 0.45);
-  sky.uniforms.uGlow.value.copy(warm);
-  scene.fog.color.copy(sky.uniforms.uHorizon.value);
+  sky.uniforms.uHorizon.value.lerp(warm, sunset * 0.35);
+  sky.uniforms.uGlow.value.copy(sunNoon).lerp(warm, sunset);
+  scene.fog.color.copy(dayFog).lerp(nightHorizon, night);
+  scene.fog.color.lerp(warm, sunset * 0.18);
+  scene.fog.density = 0.000055 + night * 0.0002;
   scene.background.copy(scene.fog.color);
+  renderer.toneMappingExposure = 0.72 + 0.42 * day;
   if (campus?.facades) {
-    for (const mat of campus.facades) mat.emissiveIntensity = 0.04 + night * 0.9;
+    for (const mat of campus.facades) mat.emissiveIntensity = 0.03 + night * 0.95;
   }
   const h = Math.floor(hour);
   const m = Math.floor((hour % 1) * 60);
@@ -178,64 +191,14 @@ function applyHour(next) {
   nightBtn.setAttribute('aria-pressed', day < 0.35 ? 'true' : 'false');
 }
 
-function landmarkMap(data) {
-  const map = new Map();
-  for (const lm of data.landmarks || []) map.set(lm.id, lm);
-  return map;
-}
-
-function coreBounds(landmarks) {
-  const ids = ['church', 'quad', 'falvey', 'connelly', 'bartley', 'stadium', 'pavilion', 'station', 'law', 'garey', 'mendel', 'tolentine', 'alumni'];
-  const pts = landmarks.filter((l) => ids.includes(l.id));
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minZ = Infinity;
-  let maxZ = -Infinity;
-  for (const p of pts) {
-    minX = Math.min(minX, p.x);
-    maxX = Math.max(maxX, p.x);
-    minZ = Math.min(minZ, p.z);
-    maxZ = Math.max(maxZ, p.z);
-  }
-  return {
-    cx: (minX + maxX) / 2,
-    cz: (minZ + maxZ) / 2,
-    span: Math.max(maxX - minX, maxZ - minZ, 400),
-  };
-}
-
-function viewsFor(data) {
-  const byId = landmarkMap(data);
-  const core = coreBounds(data.landmarks || []);
-  const y = (lm) => terrainY(lm.x, lm.z);
-  const place = (lm, dist, height, bearing, aim = 8) => {
-    if (!lm) return null;
-    const ground = y(lm);
-    return {
-      pos: [lm.x + Math.sin(bearing) * dist, ground + height, lm.z + Math.cos(bearing) * dist],
-      target: [lm.x, ground + aim, lm.z],
-    };
-  };
-  const church = byId.get('church');
-  const quad = byId.get('quad');
-  const aerial = {
-    pos: [core.cx - core.span * 0.08, core.span * 0.38, core.cz + core.span * 0.58],
-    target: [core.cx, 16, core.cz - core.span * 0.04],
-  };
-  return {
-    aerial,
-    quad: quad && church
-      ? {
-          pos: [quad.x + 20, y(quad) + 48, quad.z + 95],
-          target: [church.x, y(church) + 12, church.z],
-        }
-      : place(quad, 90, 46, 0.3, 4),
-    church: place(church, 52, 18, 0.02, 11),
-    stadium: place(byId.get('stadium'), 130, 32, 1.15, 8),
-    library: place(byId.get('falvey'), 52, 18, 1.15, 7),
-    station: place(byId.get('station'), 55, 16, 0.2, 4),
-    rotate: aerial,
-  };
+function syncControls() {
+  controls._sphericalDelta.set(0, 0, 0);
+  controls._panOffset.set(0, 0, 0);
+  controls._scale = 1;
+  const damping = controls.enableDamping;
+  controls.enableDamping = false;
+  controls.update();
+  controls.enableDamping = damping;
 }
 
 function setActive(name) {
@@ -248,10 +211,11 @@ function flyTo(view, { animate = true } = {}) {
   if (!view) return Promise.resolve();
   rotating = false;
   controls.autoRotate = false;
+  syncControls();
   if (!animate) {
     camera.position.set(...view.pos);
     controls.target.set(...view.target);
-    controls.update();
+    syncControls();
     fly = null;
     return Promise.resolve();
   }
@@ -259,9 +223,11 @@ function flyTo(view, { animate = true } = {}) {
   const fromT = controls.target.clone();
   const toP = new THREE.Vector3(...view.pos);
   const toT = new THREE.Vector3(...view.target);
+  const travel = fromP.distanceTo(toP) + fromT.distanceTo(toT);
   const t0 = performance.now();
+  controls.enabled = false;
   return new Promise((resolve) => {
-    fly = { fromP, fromT, toP, toT, t0, ms: 1200, resolve };
+    fly = { fromP, fromT, toP, toT, t0, ms: THREE.MathUtils.clamp(700 + travel * 0.45, 850, 1600), resolve };
   });
 }
 
@@ -325,10 +291,20 @@ function setWalk(on) {
   controls.enabled = !on;
   controls.autoRotate = !on && rotating;
   if (on) {
-    const ground = terrainY(controls.target.x, controls.target.z);
-    camera.position.set(controls.target.x, ground + 1.68, controls.target.z + 0.01);
-    walkState.yaw = Math.atan2(camera.position.x - controls.target.x, camera.position.z - controls.target.z);
-    walkState.pitch = -0.04;
+    const spot = campus?.walkAnchor || controls.target;
+    let x = spot.x;
+    let z = spot.z;
+    if (blocked(x, z) && campus?.walkAnchor) {
+      x = campus.walkAnchor.x;
+      z = campus.walkAnchor.z;
+    }
+    const ground = terrainY(x, z);
+    const face = campus?.views?.church?.target;
+    const faceX = Array.isArray(face) ? face[0] : controls.target.x;
+    const faceZ = Array.isArray(face) ? face[2] : controls.target.z;
+    camera.position.set(x, ground + 1.68, z);
+    walkState.yaw = Math.atan2(camera.position.x - faceX, camera.position.z - faceZ);
+    walkState.pitch = -0.02;
   }
 }
 
@@ -431,7 +407,7 @@ nav.addEventListener('click', (ev) => {
 timeInput.addEventListener('input', () => {
   applyHour(Number(timeInput.value));
 });
-document.getElementById('day').addEventListener('click', () => applyHour(15.5));
+document.getElementById('day').addEventListener('click', () => applyHour(15.15));
 document.getElementById('night').addEventListener('click', () => applyHour(21.2));
 document.getElementById('walk').addEventListener('click', () => setWalk(!walking));
 
@@ -454,14 +430,16 @@ function animate() {
     controls.target.lerpVectors(fly.fromT, fly.toT, e);
     if (t >= 1) {
       const done = fly.resolve;
+      camera.position.copy(fly.toP);
+      controls.target.copy(fly.toT);
       fly = null;
-      controls.enableDamping = false;
-      controls.update();
-      controls.enableDamping = true;
+      controls.enabled = !walking;
+      syncControls();
       done();
     }
   } else if (!walking) controls.update();
   else updateWalk(dt);
+  life?.update(dt, 1 - sky.uniforms.uDay.value);
   applyHour(hour);
   renderer.render(scene, camera);
   labelRenderer.render(scene, camera);
@@ -473,31 +451,57 @@ async function main() {
   const res = await fetch(`${import.meta.env.BASE_URL}data/villanova.json`);
   if (!res.ok) throw new Error(`campus data ${res.status}`);
   const data = await res.json();
+  annotateCrossings(data);
   terrainY = makeTerrain(data.terrain);
   const materials = createMaterials(createFacadeTextures());
   const built = buildCampus(data, terrainY, materials);
   scene.add(built.group);
   blockers = built.blockers;
-  const views = viewsFor(data);
-  campus = { views, facades: materials.facadeList, data };
+  const framed = buildViews(data, terrainY);
+  const views = framed.views;
+  life = createCampusLife(data, terrainY, scene, { blocked: (x, z) => blocked(x, z) });
+  campus = {
+    views,
+    facades: materials.facadeList,
+    data,
+    walkAnchor: framed.anchor,
+    life,
+  };
   for (const lm of data.landmarks || []) {
     if (!lm.label) continue;
     scene.add(makeLabel(lm));
   }
-  const presetIds = { quad: 'quad', church: 'church', stadium: 'stadium', library: 'falvey', station: 'station' };
+  const presetIds = {
+    quad: 'quad',
+    church: 'church',
+    stadium: 'stadium',
+    library: 'falvey',
+    pavilion: 'pavilion',
+    station: 'station',
+    lancaster: 'station',
+  };
   for (const btn of nav.querySelectorAll('button')) {
     const id = presetIds[btn.dataset.view];
     if (id && !views[btn.dataset.view]) btn.disabled = true;
   }
-  const heightTagged = (data.buildings || []).filter((b) => b.hs === 'height' || b.hs === 'levels').length;
-  layersEl.textContent = `${data.buildings.length} buildings · ${data.roads.length} roads · ${data.paths.length} paths · ${heightTagged} tagged heights`;
-  const initial = new URLSearchParams(location.search).get('view') || 'aerial';
-  await go(campus.views[initial] ? initial : 'aerial', false);
+  const params = new URLSearchParams(location.search);
+  if (params.get('clean') === '1') document.body.dataset.clean = '1';
+  if (params.get('hour')) applyHour(Number(params.get('hour')));
+  const counts = life.counts();
+  layersEl.textContent = `${data.buildings.length} buildings · ${data.roads.length} roads · ${counts.cars} cars · ${counts.peds} walkers`;
+  const initial = params.get('view') || 'aerial';
+  const viewName = initial === 'walk' ? 'quad' : initial;
+  await go(campus.views[viewName] ? viewName : 'aerial', false);
+  if (params.get('walk') === '1' || initial === 'walk') setWalk(true);
   loader.classList.add('hidden');
   document.body.dataset.ready = '1';
   window.__campus = {
     ready: true,
     setView: (name) => go(name, false),
+    setWalk: (on) => setWalk(on),
+    setHour: (h) => applyHour(h),
+    counts: () => life.counts(),
+    anchor: framed.anchor,
   };
 }
 

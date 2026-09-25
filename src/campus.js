@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { footprintBase, hash01, pointInPoly, ringCentroid } from './geo.js';
+import { areaCentroid, footprintBase, hash01, pointInPoly, ringRadius } from './geo.js';
+import { resolveBuilding } from './height-rules.js';
 
-const SOIL = [0.16, 0.17, 0.15];
-const LAWN = [0.22, 0.31, 0.24];
-const WOOD = [0.13, 0.2, 0.15];
-const GARDEN = [0.17, 0.26, 0.2];
+const SOIL = [0.1, 0.36, 0.08];
+const LAWN = [0.14, 0.48, 0.1];
+const WOOD = [0.05, 0.22, 0.06];
+const GARDEN = [0.12, 0.42, 0.1];
 
 function openRing(ring) {
   if (!ring?.length) return [];
@@ -79,6 +80,7 @@ function splitWallRoof(geo) {
   const wall = [];
   const wallUv = [];
   const roof = [];
+  const roofUv = [];
   for (let i = 0; i < pos.count; i += 3) {
     const tri = [];
     for (let k = 0; k < 3; k++) tri.push([pos.getX(i + k), pos.getY(i + k), pos.getZ(i + k)]);
@@ -96,7 +98,10 @@ function splitWallRoof(geo) {
     if (ny < -0.35 * (horiz + Math.abs(ny))) continue;
     const flat = ny > horiz * 1.4;
     if (flat) {
-      for (const p of tri) roof.push(p[0], p[1], p[2]);
+      for (const p of tri) {
+        roof.push(p[0], p[1], p[2]);
+        roofUv.push(p[0] / 5.5, p[2] / 5.5);
+      }
       continue;
     }
     const len = horiz || 1;
@@ -116,6 +121,7 @@ function splitWallRoof(geo) {
   const roofGeo = new THREE.BufferGeometry();
   if (roof.length) {
     roofGeo.setAttribute('position', new THREE.Float32BufferAttribute(roof, 3));
+    roofGeo.setAttribute('uv', new THREE.Float32BufferAttribute(roofUv, 2));
     roofGeo.computeVertexNormals();
   }
   if (src !== geo) src.dispose();
@@ -159,7 +165,8 @@ function ribbonGeometry(lines, yAt, lift) {
       dx /= len;
       dz /= len;
       const [x, z] = pts[i];
-      const y = yAt(x, z) + lift;
+      const extra = Array.isArray(line.lift) ? line.lift[i] || 0 : line.bridge ? line.bridgeLift || 5.4 : 0;
+      const y = yAt(x, z) + lift + extra;
       left.push([x - dz * width * 0.5, y, z + dx * width * 0.5]);
       right.push([x + dz * width * 0.5, y, z - dx * width * 0.5]);
       if (i) dist += Math.hypot(x - pts[i - 1][0], z - pts[i - 1][1]);
@@ -256,45 +263,260 @@ function buildTerrainMesh(terrain, yAt, greens) {
   return geo;
 }
 
-function insetRing(ring, scale) {
-  const [cx, cz] = ringCentroid(ring);
-  const pts = openRing(ring).map(([x, z]) => [cx + (x - cx) * scale, cz + (z - cz) * scale]);
-  pts.push([pts[0][0], pts[0][1]]);
-  return pts;
+function principalAngle(ring) {
+  const [cx, cz] = areaCentroid(ring);
+  let sxx = 0;
+  let szz = 0;
+  let sxz = 0;
+  const n = ring.length - 1;
+  for (let i = 0; i < n; i++) {
+    const dx = ring[i][0] - cx;
+    const dz = ring[i][1] - cz;
+    sxx += dx * dx;
+    szz += dz * dz;
+    sxz += dx * dz;
+  }
+  return 0.5 * Math.atan2(2 * sxz, sxx - szz);
 }
 
-function addChurchSpires(group, ring, baseY, naveH, tipH, material) {
-  const [cx, cz] = ringCentroid(ring);
-  const spireH = Math.max(14, tipH - naveH);
-  const cone = new THREE.ConeGeometry(3.6, spireH, 7);
-  cone.translate(cx, baseY + naveH + spireH * 0.5, cz);
-  const shaft = new THREE.BoxGeometry(6.4, 7.5, 6.4);
-  shaft.translate(cx, baseY + naveH + 3.2, cz);
-  const pinnacles = [];
+function addChurchDetail(group, ring, baseY, naveH, tipH, materials) {
+  const [cx, cz] = areaCentroid(ring);
+  const angle = principalAngle(ring);
+  const radius = Math.max(14, ringRadius(ring, [cx, cz]));
+  const length = radius * 1.45;
+  const width = radius * 0.72;
+  const rise = Math.min(6.5, naveH * 0.32);
+  const shape = new THREE.Shape();
+  shape.moveTo(-width * 0.5, 0);
+  shape.lineTo(0, rise);
+  shape.lineTo(width * 0.5, 0);
+  const roof = new THREE.ExtrudeGeometry(shape, { depth: length, bevelEnabled: false });
+  roof.translate(0, 0, -length / 2);
+  roof.rotateY(angle);
+  roof.translate(cx, baseY + naveH - 0.15, cz);
+
+  const towerH = Math.max(6, (tipH - naveH) * 0.45);
+  const spireH = Math.max(8, tipH - naveH - towerH + 3.5);
+  const tower = new THREE.BoxGeometry(7.4, towerH, 7.4);
+  tower.translate(cx, baseY + naveH + towerH * 0.5, cz);
+  const spire = new THREE.ConeGeometry(3.15, spireH, 8);
+  spire.translate(cx, baseY + naveH + towerH + spireH * 0.45, cz);
+  const crossV = new THREE.BoxGeometry(0.42, 4.2, 0.42);
+  const crossH = new THREE.BoxGeometry(2.5, 0.4, 0.42);
+  const tip = baseY + naveH + towerH + spireH;
+  crossV.translate(cx, tip + 1.6, cz);
+  crossH.translate(cx, tip + 2.5, cz);
+  const bits = [roof, tower, spire, crossV, crossH];
   for (let i = 0; i < 4; i++) {
-    const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
-    const pin = new THREE.ConeGeometry(0.7, 5.5, 4);
-    pin.translate(cx + Math.cos(a) * 9.5, baseY + naveH + 2.6, cz + Math.sin(a) * 9.5);
-    pinnacles.push(pin);
+    const a = angle + (i / 4) * Math.PI * 2 + Math.PI / 4;
+    const pin = new THREE.ConeGeometry(0.65, 4.8, 4);
+    pin.translate(cx + Math.cos(a) * width * 0.78, baseY + naveH + 2.2, cz + Math.sin(a) * width * 0.42);
+    bits.push(pin);
   }
-  const geo = mergeGeometries([cone, shaft, ...pinnacles], false);
-  addMesh(group, geo, material);
+  addMesh(group, mergeGeometries(bits, false), materials.spire);
 }
 
-function buildStadium(stadium, yAt, materials) {
-  if (!stadium?.outer || stadium.outer.length < 4) return null;
-  const hole = stadium.inner?.length >= 4 ? stadium.inner : insetRing(stadium.outer, 0.58);
-  let geo = null;
-  try {
-    geo = extrudeRing(stadium.outer, [hole], stadium.h || 14);
-  } catch (err) {
-    console.warn('Stadium bowl failed', err);
-    return null;
+function addLightTowers(group, ring, yAt, material) {
+  const [cx, cz] = areaCentroid(ring);
+  const pts = openRing(ring);
+  const picks = [];
+  for (const score of [(x, z) => x + z, (x, z) => x - z, (x, z) => -x + z, (x, z) => -x - z]) {
+    let best = pts[0];
+    let bestScore = -Infinity;
+    for (const [x, z] of pts) {
+      const value = score(x - cx, z - cz);
+      if (value > bestScore) {
+        bestScore = value;
+        best = [x, z];
+      }
+    }
+    picks.push(best);
   }
-  if (!geo) return null;
+  const poles = [];
+  const heads = [];
+  for (const [x, z] of picks) {
+    const base = yAt(x, z);
+    const pole = new THREE.CylinderGeometry(0.55, 0.75, 34, 6);
+    pole.translate(x, base + 17, z);
+    const head = new THREE.BoxGeometry(11, 1.8, 4.6);
+    head.translate(x, base + 34.6, z);
+    poles.push(pole);
+    heads.push(head);
+  }
+  addMesh(group, mergeGeometries(poles, false), material);
+  addMesh(group, mergeGeometries(heads, false), material.userData?.lamp || material);
+}
+
+function addCanopy(group, ring, baseY, material) {
+  const [cx, cz] = areaCentroid(ring);
+  const radius = Math.max(8, ringRadius(ring, [cx, cz]));
+  const roof = new THREE.BoxGeometry(radius * 2.4, 0.45, radius * 1.5);
+  roof.translate(cx, baseY + 7.4, cz);
+  const posts = [];
+  for (const [sx, sz] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) {
+    const post = new THREE.BoxGeometry(0.35, 7, 0.35);
+    post.translate(cx + sx * radius * 0.8, baseY + 3.5, cz + sz * radius * 0.45);
+    posts.push(post);
+  }
+  addMesh(group, mergeGeometries([roof, ...posts], false), material);
+}
+
+function sampleRing(ring, cx, cz, count) {
+  const pts = openRing(ring)
+    .map(([x, z]) => ({ x, z, ang: Math.atan2(x - cx, z - cz) }))
+    .sort((a, b) => a.ang - b.ang);
+  const unique = [];
+  for (const point of pts) {
+    const prev = unique[unique.length - 1];
+    if (prev && Math.abs(point.ang - prev.ang) < 1e-4) continue;
+    unique.push(point);
+  }
+  if (unique.length < 3) return [];
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    const ang = -Math.PI + ((i + 0.5) / count) * Math.PI * 2;
+    let hi = 0;
+    while (hi < unique.length && unique[hi].ang < ang) hi++;
+    const next = unique[hi % unique.length];
+    const prev = unique[(hi - 1 + unique.length) % unique.length];
+    let prevAng = prev.ang;
+    let nextAng = next.ang;
+    if (hi === 0) prevAng -= Math.PI * 2;
+    if (hi === unique.length) nextAng += Math.PI * 2;
+    const span = nextAng - prevAng || 1;
+    const t = Math.max(0, Math.min(1, (ang - prevAng) / span));
+    out.push([prev.x + (next.x - prev.x) * t, prev.z + (next.z - prev.z) * t]);
+  }
+  return out;
+}
+
+function pushTri(pos, uv, verts, uvs) {
+  for (let i = 0; i < 3; i++) {
+    pos.push(verts[i][0], verts[i][1], verts[i][2]);
+    uv.push(uvs[i][0], uvs[i][1]);
+  }
+}
+
+function bufferFrom(pos, uv) {
+  if (!pos.length) return null;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/** Annular bowl: navy fascia, sloped seat deck, turf in the hole, goal posts. */
+function buildStadium(stadium, yAt, materials) {
+  if (!stadium?.outer || stadium.outer.length < 4 || !stadium.inner || stadium.inner.length < 4) return null;
+  const [cx, cz] = areaCentroid(stadium.outer);
+  const count = 64;
+  const outer = sampleRing(stadium.outer, cx, cz, count);
+  const inner = sampleRing(stadium.inner, cx, cz, count);
+  if (outer.length !== count || inner.length !== count) return null;
   const base = footprintBase(stadium.outer, yAt);
-  geo.translate(0, base, 0);
-  return splitWallRoof(geo);
+  const wallH = stadium.h || 15;
+  const lip = 2.4;
+  const wallPos = [];
+  const wallUv = [];
+  const seatPos = [];
+  const seatUv = [];
+  const cum = [0];
+  for (let i = 0; i < count; i++) {
+    const a = outer[i];
+    const b = outer[(i + 1) % count];
+    cum.push(cum[i] + Math.hypot(b[0] - a[0], b[1] - a[1]));
+  }
+  for (let i = 0; i < count; i++) {
+    const [x0, z0] = outer[i];
+    const [x1, z1] = outer[(i + 1) % count];
+    const [ix0, iz0] = inner[i];
+    const [ix1, iz1] = inner[(i + 1) % count];
+    const u0 = cum[i] / 22;
+    const u1 = cum[i + 1] / 22;
+    pushTri(
+      wallPos,
+      wallUv,
+      [[x0, base, z0], [x1, base, z1], [x1, base + wallH, z1]],
+      [[u0, 0], [u1, 0], [u1, 1]],
+    );
+    pushTri(
+      wallPos,
+      wallUv,
+      [[x0, base, z0], [x1, base + wallH, z1], [x0, base + wallH, z0]],
+      [[u0, 0], [u1, 1], [u0, 1]],
+    );
+    const su0 = (i / count) * 8;
+    const su1 = ((i + 1) / count) * 8;
+    pushTri(
+      seatPos,
+      seatUv,
+      [[x0, base + wallH, z0], [x1, base + wallH, z1], [ix1, base + lip, iz1]],
+      [[su0, 0], [su1, 0], [su1, 4]],
+    );
+    pushTri(
+      seatPos,
+      seatUv,
+      [[x0, base + wallH, z0], [ix1, base + lip, iz1], [ix0, base + lip, iz0]],
+      [[su0, 0], [su1, 4], [su0, 4]],
+    );
+  }
+  const fieldGeo = shapeSlab(stadium.inner);
+  if (fieldGeo) fieldGeo.translate(0, base + 0.7, 0);
+  const fascia = materials.navy.clone();
+  fascia.side = THREE.DoubleSide;
+  const seats = materials.seating.clone();
+  seats.side = THREE.DoubleSide;
+  return {
+    wallGeo: bufferFrom(wallPos, wallUv),
+    seatGeo: bufferFrom(seatPos, seatUv),
+    fieldGeo,
+    goals: goalPosts(stadium.inner, base + 0.9),
+    fascia,
+    seats,
+  };
+}
+
+function goalPosts(ring, y) {
+  const pts = openRing(ring);
+  const [cx, cz] = areaCentroid(ring);
+  let xx = 0;
+  let zz = 0;
+  let xz = 0;
+  for (const [x, z] of pts) {
+    const dx = x - cx;
+    const dz = z - cz;
+    xx += dx * dx;
+    zz += dz * dz;
+    xz += dx * dz;
+  }
+  const disc = Math.sqrt(Math.max(0, ((xx + zz) * (xx + zz)) / 4 - (xx * zz - xz * xz)));
+  const lambda = (xx + zz) / 2 + disc;
+  let ax = Math.abs(xz) > 1e-6 ? lambda - zz : xx >= zz ? 1 : 0;
+  let az = Math.abs(xz) > 1e-6 ? xz : xx >= zz ? 0 : 1;
+  const len = Math.hypot(ax, az) || 1;
+  ax /= len;
+  az /= len;
+  let reach = 0;
+  for (const [x, z] of pts) reach = Math.max(reach, (x - cx) * ax + (z - cz) * az);
+  const posts = [];
+  const span = Math.min(reach * 0.86, reach - 4);
+  for (const sign of [-1, 1]) {
+    const x = cx + ax * sign * span;
+    const z = cz + az * sign * span;
+    const px = -az;
+    const pz = ax;
+    for (const side of [-2.9, 2.9]) {
+      const upright = new THREE.BoxGeometry(0.28, 9.5, 0.28);
+      upright.translate(x + px * side, y + 4.75, z + pz * side);
+      posts.push(upright);
+    }
+    const bar = new THREE.BoxGeometry(0.28, 0.22, 6.1);
+    bar.rotateY(Math.atan2(px, pz));
+    bar.translate(x, y + 3.05, z);
+    posts.push(bar);
+  }
+  return mergeGeometries(posts, false);
 }
 
 export function buildCampus(data, yAt, materials) {
@@ -313,7 +535,7 @@ export function buildCampus(data, yAt, materials) {
       try {
         const geo = shapeSlab(ring);
         if (!geo) continue;
-        const [cx, cz] = ringCentroid(ring);
+        const [cx, cz] = areaCentroid(ring);
         geo.translate(0, yAt(cx, cz) + lift, 0);
         geos.push(geo);
       } catch (err) {
@@ -325,10 +547,21 @@ export function buildCampus(data, yAt, materials) {
 
   slabs(data.water || [], materials.water, 0.15);
   slabs(data.plazas || [], materials.plaza, 0.12);
-  slabs(data.pitches || [], materials.pitch, 0.22);
+  slabs(
+    (data.greens || []).filter((green) => green.kind === 'grass' || green.kind === 'garden'),
+    materials.lawn,
+    0.12,
+  );
+  slabs(data.pitches || [], materials.pitch, 0.3);
 
-  addMesh(group, ribbonGeometry(data.roads || [], yAt, 0.32), materials.road, { cast: false });
-  addMesh(group, ribbonGeometry(data.paths || [], yAt, 0.2), materials.path, { cast: false });
+  addMesh(group, ribbonGeometry(data.roads || [], yAt, 0.36), materials.road, { cast: false });
+  addMesh(group, ribbonGeometry(data.paths || [], yAt, 0.24), materials.path, { cast: false });
+  const markings = (data.roads || [])
+    .filter((road) => ['trunk', 'primary', 'secondary', 'tertiary'].includes(road.cls) && road.oneway !== 'yes' && road.oneway !== '1')
+    .map((road) => ({ pts: road.pts, w: 0.18, lift: road.lift }));
+  addMesh(group, ribbonGeometry(markings, yAt, 0.46), materials.marking, { cast: false });
+  addMesh(group, ribbonGeometry(railingLines(data.paths || []), yAt, 0.24), materials.steel, { cast: false });
+  addMesh(group, ribbonGeometry(railingLines(data.roads || []), yAt, 0.36), materials.bridge, { cast: false });
 
   const railLines = [];
   const steelLines = [];
@@ -349,8 +582,10 @@ export function buildCampus(data, yAt, materials) {
   let skipped = 0;
 
   for (const b of data.buildings || []) {
+    const spec = resolveBuilding(b);
     const church = b.n === 'St. Thomas of Villanova Church';
-    const height = church ? Math.min(16.5, b.h) : b.h;
+    const station = b.n === 'Villanova Station';
+    const height = spec.h;
     let geo = null;
     try {
       geo = extrudeRing(b.f, [], height);
@@ -366,7 +601,7 @@ export function buildCampus(data, yAt, materials) {
     const base = footprintBase(b.f, yAt);
     geo.translate(0, base, 0);
     const parts = splitWallRoof(geo);
-    const fam = materials.families[b.fam] ? b.fam : 'stone';
+    const fam = materials.families[spec.fam] ? spec.fam : 'stone';
     if (!buckets.has(fam)) buckets.set(fam, []);
     if (parts.wallGeo.getAttribute('position')?.count) buckets.get(fam).push(parts.wallGeo);
     else parts.wallGeo.dispose();
@@ -375,9 +610,16 @@ export function buildCampus(data, yAt, materials) {
     blockers.push({ f: b.f, h: height });
     if (church) {
       try {
-        addChurchSpires(group, b.f, base, height, Math.max(b.h, height + 14), materials.spire);
+        addChurchDetail(group, b.f, base, height, spec.spire || height + 14, materials);
       } catch (err) {
         console.warn('Church spire failed', err);
+      }
+    }
+    if (station) {
+      try {
+        addCanopy(group, b.f, base, materials.navy);
+      } catch (err) {
+        console.warn('Station canopy failed', err);
       }
     }
   }
@@ -389,13 +631,32 @@ export function buildCampus(data, yAt, materials) {
 
   const bowl = buildStadium(data.stadium, yAt, materials);
   if (bowl) {
-    const fam = materials.families.arena;
-    addMesh(group, bowl.wallGeo.getAttribute('position')?.count ? bowl.wallGeo : null, fam);
-    addMesh(group, bowl.roofGeo.getAttribute('position')?.count ? bowl.roofGeo : null, materials.roof);
+    addMesh(group, bowl.wallGeo, bowl.fascia);
+    addMesh(group, bowl.seatGeo, bowl.seats);
+    addMesh(group, bowl.fieldGeo, materials.pitch, { cast: false, receive: true });
+    addMesh(group, bowl.goals, materials.spire);
+    try {
+      materials.navy.userData.lamp = materials.lamp;
+      addLightTowers(group, data.stadium.outer, yAt, materials.navy);
+    } catch (err) {
+      console.warn('Stadium lights failed', err);
+    }
   }
 
   if (skipped) console.warn(`Skipped ${skipped} footprints`);
   return { group, blockers };
+}
+
+function railingLines(lines) {
+  const out = [];
+  for (const line of lines) {
+    if (!Array.isArray(line.lift) || !line.lift.some((value) => value > 2)) continue;
+    const raised = line.lift.map((value) => (value > 1.6 ? value + 1.05 : 0));
+    const half = Math.max(0.8, (line.w || 2) * 0.46);
+    out.push({ pts: offsetLine(line.pts, half), w: 0.16, lift: raised });
+    out.push({ pts: offsetLine(line.pts, -half), w: 0.16, lift: raised });
+  }
+  return out;
 }
 
 function offsetLine(pts, amount) {

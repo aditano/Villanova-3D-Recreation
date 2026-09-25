@@ -17,6 +17,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
+import { resolveBuilding } from '../src/height-rules.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'public/data/villanova.json');
@@ -758,7 +759,7 @@ async function main() {
       const height = buildingHeight(tags, name);
       const kind = tags.building;
       const fam = familyFor(tags, name, el.id);
-      buildings.push({
+      const drafted = {
         id: el.id,
         osm: `${el.type}/${el.id}`,
         n: name,
@@ -767,7 +768,9 @@ async function main() {
         hs: height.source,
         fam,
         f: simple,
-      });
+      };
+      const spec = resolveBuilding(drafted);
+      buildings.push({ ...drafted, h: spec.h, hs: spec.hs, fam: spec.fam, spire: spec.spire || undefined });
       if (/stadium/i.test(name) && area > 1500) {
         stadium = { name, outer: simple, h: Math.max(height.h, 14), osm: `${el.type}/${el.id}` };
       }
@@ -791,10 +794,17 @@ async function main() {
           continue;
         }
       }
+      const traffic = {
+        oneway: tags.oneway || '',
+        lanes: Number(tags.lanes) || 0,
+        bridge: tags.bridge === 'yes' || tags.bridge === 'viaduct',
+        tunnel: tags.tunnel === 'yes' || tags.tunnel === 'building_passage',
+        layer: Number(tags.layer) || 0,
+      };
       if (ROAD_CLASS[cls]) {
-        roads.push({ id: el.id, n: name, cls, w: ROAD_CLASS[cls], pts: line });
+        roads.push({ id: el.id, n: name, cls, w: ROAD_CLASS[cls], pts: line, ...traffic });
       } else if (PATH_CLASS[cls]) {
-        paths.push({ id: el.id, cls, w: PATH_CLASS[cls], pts: line });
+        paths.push({ id: el.id, cls, w: PATH_CLASS[cls], pts: line, ...traffic });
       }
       continue;
     }
