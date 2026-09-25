@@ -10,10 +10,10 @@ This is **not** photogrammetry, **not** a scan, and **not** an official Villanov
 
 - **Halls with massing**, not flat extrusions: stone, brick, limestone, and glass families, cornices, sills, and pitched roofs where the footprint is a simple block. St. Thomas of Villanova Church has a buttressed nave, gabled roof, and central spire. Falvey steps back above a portico. The law school reads as a glass bar. Finneran Pavilion has a barrel roof. Villanova Stadium is a seating bowl around the mapped field.
 - **Roads**: asphalt, curbs, sidewalks, and lane markings. Lancaster Avenue (trunk), campus drives, and intersections are paved. Cars and people are ambient scenery on those surfaces, not live traffic.
-- **Lawns** with multi-scale color, contact darkening along walls, and a low grass displacement that flattens under pavement so walk mode still follows the DEM.
+- **Lawns** with a green albedo, mottling, dirt along paths, contact darkening at walls, and a low grass displacement that flattens under pavement so walk mode still follows the DEM.
 - **Rail corridor** as ballast, ties, rails, and catenary poles, plus the station platform. No trains and no GTFS.
 - **Landmark labels** and camera presets: Aerial · Quad · Church · Stadium · Library · Pavilion · Station · Lancaster · Rotate
-- **Afternoon sun** by default (about 15:24), soft shadows, a blue sky, and a night path with window glow
+- **Afternoon sun** by default (about 15:09), soft shadows, a blue sky, and a night path with window glow
 - **Walk mode**: WASD / arrows, Shift to run, drag to look, Esc to leave. Touch devices get a pad. `?view=walk` starts on Lancaster Avenue looking toward the church. Walking follows the terrain and stops at building footprints. Interiors, the stadium stands, and bridge decks are not modeled as walkable spaces
 
 ## Run locally
