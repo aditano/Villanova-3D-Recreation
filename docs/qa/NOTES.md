@@ -18,15 +18,15 @@ Compared with the first Pages maquette (gray sky, one facade tint, camera preset
 
 | Still | What it should show |
 | --- | --- |
-| `aerial.png` | Blue sky over the core campus, saturated lawns, distinct halls, the stadium bowl toward the east |
-| `quad.png` | Church spire from the open lawn south of the church, people on the walks |
-| `church.png` | Gothic nave, tower, and cross, with arched windows |
+| `aerial.png` | Pale horizon and clouds over green lawns, trees, and distinct halls; the stadium bowl toward the east |
+| `quad.png` | Church spire across an open lawn edged with trees, people on the walks |
+| `church.png` | Gothic nave, pointed bays, south rose, buttresses, and the spire, from due south |
 | `stadium.png` | Navy fascia, striped seats, green field, goal posts, corner lights |
-| `library.png` | Falvey’s stone block and large bays, whole building in frame |
-| `pavilion.png` | Finneran Pavilion’s dark mass and navy/white band |
+| `library.png` | Falvey’s stone block, portico, and deep bays, whole building in frame |
+| `pavilion.png` | Finneran Pavilion’s ribbed mass and barrel roof |
 | `station.png` | Station building and canopy, with ballast in front of the platform |
-| `lancaster.png` | Lancaster Avenue with ambient cars; lawn in the foreground |
-| `walk.png` | First person on the Main Quad lawn, church ahead, people on the path |
+| `lancaster.png` | Lancaster Avenue with cars, verge trees, and a brick hall whose windows are frames, not a painted grid |
+| `walk.png` | Eye height on the lawn, grass cards and a dirt path, brick bays, trees, church ahead |
 
 ## Checks that passed with these stills
 
