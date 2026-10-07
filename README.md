@@ -63,3 +63,15 @@ Facades, asphalt, roofs, grass, and the field are procedural canvases written fo
 - Not live traffic. Cars and people are placed along the mapped centerlines.
 - Not an interior walkthrough. The stadium stands and bridge decks are not walkable.
 - Not photogrammetry and not a global-illumination render. There is no screen-space ambient occlusion pass; contact shadowing is baked into the ground mask and into cornices, curbs, and reveals. See `docs/qa/VISUAL.md` for what the stills show and what is still short of a game-engine campus.
+
+## License
+
+Copyright 2026 Anthony DiTano.
+
+Original source code and original procedural assets in this repository are released under the GNU General Public License, version 3, or any later version (`GPL-3.0-or-later`). The full text is in [LICENSE](LICENSE).
+
+Third-party assets and data keep their own licenses. Those materials are exceptions:
+
+- **Maps.** Campus geometry in `public/data/villanova.json` comes from [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (© OpenStreetMap) under the [Open Database License (ODbL)](https://opendatacommons.org/licenses/odbl/). Elevation samples come from [AWS terrain tiles](https://registry.opendata.aws/terrain-tiles/) (Mapzen Terrarium encoding of a USGS 3DEP composite) and stay under those sources' terms.
+- **Models.** This repository does not vendor third-party 3D model files. The viewer depends on [Three.js](https://github.com/mrdoob/three.js/), which remains under the MIT License.
+- **Villanova trademarks.** Villanova University names, marks, and other trademarks remain with their owners. This maquette grants no trademark license.
