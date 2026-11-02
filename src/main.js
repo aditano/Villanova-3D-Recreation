@@ -346,15 +346,23 @@ function setWalk(on, pose) {
   controls.enabled = !on;
   controls.autoRotate = !on && rotating;
   if (on) {
-    if (pose?.pos) {
-      camera.position.set(pose.pos[0], pose.pos[1], pose.pos[2]);
-      camera.fov = pose.fov || 62;
+    const start = pose?.pos ? pose : campus?.views?.walk;
+    if (start?.pos) {
+      camera.position.set(start.pos[0], start.pos[1], start.pos[2]);
+      camera.fov = start.fov || 62;
       camera.updateProjectionMatrix();
-      walkState.yaw = pose.yaw ?? 0;
+      walkState.yaw = start.yaw ?? 0;
       walkState.pitch = -0.03;
     } else {
-      const ground = terrainY(controls.target.x, controls.target.z);
-      camera.position.set(controls.target.x, ground + 1.68, controls.target.z + 0.01);
+      let x = controls.target.x;
+      let z = controls.target.z;
+      // Orbit targets sit on building centers; step off footprints before standing there.
+      for (let i = 0; i < 24 && blocked(x, z); i++) {
+        x += 3.5;
+        z += 2.5;
+      }
+      const ground = terrainY(x, z);
+      camera.position.set(x, ground + 1.68, z + 0.01);
       walkState.yaw = Math.atan2(camera.position.x - controls.target.x, camera.position.z - controls.target.z);
       walkState.pitch = -0.04;
     }
@@ -462,7 +470,10 @@ timeInput.addEventListener('input', () => {
 });
 document.getElementById('day').addEventListener('click', () => applyHour(15.15));
 document.getElementById('night').addEventListener('click', () => applyHour(21.2));
-document.getElementById('walk').addEventListener('click', () => setWalk(!walking));
+document.getElementById('walk').addEventListener('click', () => {
+  if (walking) setWalk(false);
+  else setWalk(true, campus?.views?.walk);
+});
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
