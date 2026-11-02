@@ -303,6 +303,7 @@ function makeLabel(lm) {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'pin';
+  btn.setAttribute('aria-label', `Go to ${lm.label}`);
   const sub = lm.sub && lm.sub.length <= 12 ? `<span class="pin-sub">${lm.sub}</span>` : '';
   btn.innerHTML = `<span class="pin-tick"></span><span class="pin-name">${lm.label}</span>${sub}`;
   btn.addEventListener('click', (ev) => {
