@@ -309,7 +309,7 @@ function makeLabel(lm) {
     ev.stopPropagation();
     const preset =
       lm.preset ||
-      { falvey: 'library', pavilion: 'pavilion', law: 'library', quad: 'quad' }[lm.id] ||
+      { falvey: 'library', pavilion: 'pavilion', quad: 'quad' }[lm.id] ||
       null;
     if (preset && campus.views[preset]) go(preset);
     else {
