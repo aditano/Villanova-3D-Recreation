@@ -129,7 +129,11 @@ export function buildLife(data, yAt, materials) {
   let trunk = null;
   let trunkLen = 0;
   let lancasterTrunk = null;
-  let lancasterTrunkLen = 0;
+  let lancasterScore = -Infinity;
+  const coreLm =
+    (data.landmarks || []).find((lm) => lm.id === 'quad') ||
+    (data.landmarks || []).find((lm) => lm.id === 'church') ||
+    { x: 80, z: 90 };
 
   for (const road of data.roads || []) {
     const profile = roadProfile(road);
@@ -139,17 +143,23 @@ export function buildLife(data, yAt, materials) {
     let len = 0;
     for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
     const onLancaster = /lancaster/i.test(road.n || '');
-    // Lancaster is split across short OSM ways; prefer it over the longest primary fragment.
-    if (onLancaster && len > lancasterTrunkLen) {
-      lancasterTrunk = { pts, half, len, source: road.pts, lifts: road.lift };
-      lancasterTrunkLen = len;
+    // Lancaster is split across OSM ways — pick a long piece near the campus core, not a distant fragment.
+    if (onLancaster && len > 40) {
+      const mid = pts[Math.floor(pts.length / 2)];
+      const dist = Math.hypot(mid[0] - coreLm.x, mid[1] - coreLm.z);
+      const score = len / (1 + dist * 0.035);
+      if (score > lancasterScore) {
+        lancasterTrunk = { pts, half, len, source: road.pts, lifts: road.lift };
+        lancasterScore = score;
+      }
     }
     if ((road.cls === 'trunk' || road.cls === 'primary') && len > trunkLen) {
       trunk = { pts, half, len, source: road.pts, lifts: road.lift };
       trunkLen = len;
     }
     const arterial = profile.kind === 'arterial' || profile.kind === 'highway' || profile.kind === 'collector';
-    const spacing = onLancaster ? 22 : arterial ? 46 : 16;
+    const nearCore = Math.hypot(pts[0][0] - coreLm.x, pts[0][1] - coreLm.z) < 220;
+    const spacing = onLancaster ? (nearCore ? 14 : 22) : arterial ? 46 : 16;
     let acc = arterial || onLancaster ? 8 : 3;
     for (let i = 1; i < pts.length; i++) {
       const a = pts[i - 1];
@@ -178,8 +188,9 @@ export function buildLife(data, yAt, materials) {
 
   trunk = lancasterTrunk || trunk;
   if (trunk) {
-    for (let k = 0; k < 7; k++) {
-      const d0 = (k / 7) * trunk.len;
+    const fleet = lancasterTrunk ? 12 : 7;
+    for (let k = 0; k < fleet; k++) {
+      const d0 = ((k + 0.5) / fleet) * trunk.len;
       movers.push({ d: d0, speed: 7 + (k % 3) * 1.6, side: k % 2 === 0 ? 1 : -1, color: COLORS[k % COLORS.length] });
     }
   }
@@ -202,7 +213,7 @@ export function buildLife(data, yAt, materials) {
   group.add(bodyMesh);
   group.add(wheelMesh);
 
-  const quadLm = (data.landmarks || []).find((lm) => lm.id === 'quad') || { x: 91, z: 89 };
+  const quadLm = coreLm;
   const personAt = (x, z, lift = 0) => ({
     x,
     y: yAt(x, z) + 0.9 + lift,
