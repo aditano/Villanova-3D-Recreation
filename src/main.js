@@ -553,6 +553,7 @@ async function main() {
   if (initial === 'walk' || params.get('walk') === '1') await go('walk', false);
   else await go(campus.views[initial] ? initial : 'aerial', false);
   loader.classList.add('hidden');
+  loader.setAttribute('aria-busy', 'false');
   document.body.dataset.ready = '1';
   window.__campus = {
     ready: true,
