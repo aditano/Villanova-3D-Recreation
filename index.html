@@ -9,7 +9,7 @@
   </head>
   <body>
     <div id="app">
-      <canvas id="c"></canvas>
+      <canvas id="c" role="img" aria-label="Interactive 3D Villanova campus maquette"></canvas>
     </div>
 
     <header class="hud-tl">
@@ -22,19 +22,19 @@
 
     <aside class="hud-tr">
       <div class="eyebrow">On the model</div>
-      <div id="layers">Loading campus…</div>
+      <div id="layers" aria-live="polite">Loading campus…</div>
     </aside>
 
     <section class="tools" aria-label="Light and walk">
       <div class="tools-row">
-        <span class="eyebrow">Light</span>
-        <output class="clock" id="clock">15:09</output>
+        <span class="eyebrow" id="light-label">Light</span>
+        <output class="clock" id="clock" aria-labelledby="light-label">15:09</output>
       </div>
       <input id="time" type="range" min="0" max="24" step="0.01" value="15.15" aria-label="Time of day" />
       <div class="tools-actions">
-        <button type="button" id="day" aria-pressed="true">Day</button>
-        <button type="button" id="night" aria-pressed="false">Night</button>
-        <button type="button" id="walk" aria-pressed="false">Walk</button>
+        <button type="button" id="day" aria-pressed="true" aria-label="Day lighting">Day</button>
+        <button type="button" id="night" aria-pressed="false" aria-label="Night lighting">Night</button>
+        <button type="button" id="walk" aria-pressed="false" aria-label="Toggle walk mode">Walk</button>
       </div>
     </section>
 
@@ -50,16 +50,16 @@
       <button type="button" data-view="rotate">Rotate</button>
     </nav>
 
-    <p class="walk-help" id="walk-help">WASD to move · drag to look · Shift runs · Esc leaves</p>
+    <p class="walk-help" id="walk-help" role="status" aria-live="polite">WASD to move · drag to look · Shift runs · Esc leaves</p>
     <div class="walk-pad" id="walk-pad" aria-label="Walk controls">
       <button type="button" class="up" data-key="KeyW" aria-label="Forward">↑</button>
       <button type="button" class="left" data-key="KeyA" aria-label="Left">←</button>
       <button type="button" class="down" data-key="KeyS" aria-label="Back">↓</button>
       <button type="button" class="right" data-key="KeyD" aria-label="Right">→</button>
-      <button type="button" class="run" data-key="ShiftLeft">Run</button>
+      <button type="button" class="run" data-key="ShiftLeft" aria-label="Run">Run</button>
     </div>
 
-    <div class="loader" id="loader">
+    <div class="loader" id="loader" role="status" aria-live="polite" aria-busy="true">
       <div class="loader-card">
         <div class="eyebrow">Assembling the campus</div>
         <div class="loader-bar"><span></span></div>

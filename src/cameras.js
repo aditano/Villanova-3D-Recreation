@@ -303,9 +303,14 @@ export function buildViews(data, terrainY) {
     const sz = (churchLm.z - road.z) / dist;
     let wx = road.x + sx * 14;
     let wz = road.z + sz * 14;
-    for (let i = 0; i < 8 && hit(wx, wz); i++) {
-      wx += 3;
-      wz += 2;
+    for (let i = 0; i < 24 && hit(wx, wz); i++) {
+      wx += 2.5;
+      wz += 1.5;
+    }
+    // Prefer the open lawn if Lancaster still leaves the eye inside a hall.
+    if (hit(wx, wz)) {
+      wx = anchor.x;
+      wz = anchor.z;
     }
     walk = {
       pos: [wx, terrainY(wx, wz) + 1.68, wz],

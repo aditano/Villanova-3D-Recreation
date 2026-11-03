@@ -128,6 +128,12 @@ export function buildLife(data, yAt, materials) {
   const movers = [];
   let trunk = null;
   let trunkLen = 0;
+  let lancasterTrunk = null;
+  let lancasterScore = -Infinity;
+  const coreLm =
+    (data.landmarks || []).find((lm) => lm.id === 'quad') ||
+    (data.landmarks || []).find((lm) => lm.id === 'church') ||
+    { x: 80, z: 90 };
 
   for (const road of data.roads || []) {
     const profile = roadProfile(road);
@@ -136,13 +142,25 @@ export function buildLife(data, yAt, materials) {
     const half = profile.asphalt / 2;
     let len = 0;
     for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    const onLancaster = /lancaster/i.test(road.n || '');
+    // Lancaster is split across OSM ways — pick a long piece near the campus core, not a distant fragment.
+    if (onLancaster && len > 40) {
+      const mid = pts[Math.floor(pts.length / 2)];
+      const dist = Math.hypot(mid[0] - coreLm.x, mid[1] - coreLm.z);
+      const score = len / (1 + dist * 0.035);
+      if (score > lancasterScore) {
+        lancasterTrunk = { pts, half, len, source: road.pts, lifts: road.lift };
+        lancasterScore = score;
+      }
+    }
     if ((road.cls === 'trunk' || road.cls === 'primary') && len > trunkLen) {
       trunk = { pts, half, len, source: road.pts, lifts: road.lift };
       trunkLen = len;
     }
     const arterial = profile.kind === 'arterial' || profile.kind === 'highway' || profile.kind === 'collector';
-    const spacing = arterial ? 46 : 16;
-    let acc = arterial ? 8 : 3;
+    const nearCore = Math.hypot(pts[0][0] - coreLm.x, pts[0][1] - coreLm.z) < 220;
+    const spacing = onLancaster ? (nearCore ? 14 : 22) : arterial ? 46 : 16;
+    let acc = arterial || onLancaster ? 8 : 3;
     for (let i = 1; i < pts.length; i++) {
       const a = pts[i - 1];
       const b = pts[i];
@@ -160,7 +178,7 @@ export function buildLife(data, yAt, materials) {
       const x = b[0] - dirz * lat;
       const z = b[1] + dirx * lat;
       if (insideBuildings(x, z, buildings)) continue;
-      if (!arterial && hash01(x, z) < 0.42) continue;
+      if (!arterial && !onLancaster && hash01(x, z) < 0.42) continue;
       const yaw = vehicleYaw(dirx * side, dirz * side);
       const y = yAt(x, z) + SURFACE.asphalt + pointLift(road.pts, road.lift, x, z);
       const color = COLORS[Math.floor(hash01(x + 3, z) * COLORS.length) % COLORS.length];
@@ -168,9 +186,11 @@ export function buildLife(data, yAt, materials) {
     }
   }
 
+  trunk = lancasterTrunk || trunk;
   if (trunk) {
-    for (let k = 0; k < 7; k++) {
-      const d0 = (k / 7) * trunk.len;
+    const fleet = lancasterTrunk ? 12 : 7;
+    for (let k = 0; k < fleet; k++) {
+      const d0 = ((k + 0.5) / fleet) * trunk.len;
       movers.push({ d: d0, speed: 7 + (k % 3) * 1.6, side: k % 2 === 0 ? 1 : -1, color: COLORS[k % COLORS.length] });
     }
   }
@@ -193,25 +213,42 @@ export function buildLife(data, yAt, materials) {
   group.add(bodyMesh);
   group.add(wheelMesh);
 
-  const people = [];
+  const quadLm = coreLm;
+  const personAt = (x, z, lift = 0) => ({
+    x,
+    y: yAt(x, z) + 0.9 + lift,
+    z,
+    yaw: hash01(z, x) * 6.2,
+    sx: 0.42,
+    sy: 0.9 + hash01(x, z) * 0.15,
+    sz: 0.28,
+  });
+  const nearQuad = [];
+  const elsewhere = [];
   for (const path of data.paths || []) {
-    const pts = densify(path.pts, 18);
-    for (let i = 1; i < pts.length && people.length < 48; i += 2) {
+    const pts = densify(path.pts, 14);
+    for (let i = 1; i < pts.length; i += 2) {
       const x = pts[i][0];
       const z = pts[i][1];
-      if (hash01(x, z) < 0.55) continue;
+      const onQuad = Math.hypot(x - quadLm.x, z - quadLm.z) < 95;
+      // Keep more walkers near the lawn; thin the rest.
+      if (hash01(x, z) < (onQuad ? 0.22 : 0.55)) continue;
       if (insideBuildings(x, z, buildings)) continue;
-      people.push({
-        x,
-        y: yAt(x, z) + 0.9 + pointLift(path.pts, path.lift, x, z),
-        z,
-        yaw: hash01(z, x) * 6.2,
-        sx: 0.42,
-        sy: 0.9 + hash01(x, z) * 0.15,
-        sz: 0.28,
-      });
+      const person = personAt(x, z, pointLift(path.pts, path.lift, x, z));
+      if (onQuad) nearQuad.push(person);
+      else elsewhere.push(person);
     }
   }
+  // Seed the open lawn so the quad is not only path edges.
+  for (let i = 0; i < 18; i++) {
+    const a = (i / 18) * Math.PI * 2;
+    const r = 10 + hash01(i, 11) * 32;
+    const x = quadLm.x + Math.cos(a) * r;
+    const z = quadLm.z + Math.sin(a) * r;
+    if (insideBuildings(x, z, buildings)) continue;
+    nearQuad.push(personAt(x, z));
+  }
+  const people = nearQuad.concat(elsewhere).slice(0, 72);
   const personGeo = new THREE.CapsuleGeometry(0.5, 1, 3, 6);
   const personMesh = new THREE.InstancedMesh(personGeo, materials.skin, Math.max(1, people.length));
   personMesh.count = people.length;
@@ -374,11 +411,10 @@ export function buildLife(data, yAt, materials) {
       }
     });
   }
-  const quad = (data.landmarks || []).find((lm) => lm.id === 'quad') || { x: 91, z: 89 };
   for (let i = 0; i < 18; i++) {
     const a = (i / 18) * Math.PI * 2;
     const r = 50 + hash01(i, 5) * 10;
-    pushTree(quad.x + Math.cos(a) * r, quad.z + Math.sin(a) * r, 10 + hash01(i, quad.x) * 2.4);
+    pushTree(quadLm.x + Math.cos(a) * r, quadLm.z + Math.sin(a) * r, 10 + hash01(i, quadLm.x) * 2.4);
   }
   const canopy = new THREE.SphereGeometry(1, 7, 5);
   const darkTrees = trees.filter((t) => t.dark);

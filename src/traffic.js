@@ -180,7 +180,23 @@ export function createCampusSim(data, { blocked = null, cars = 70, peds = 64 } =
     followGap: 1.4,
     bias: bridge,
   });
-  // Keep a few walkers on the quad paths even when bridges exist.
+  // Move a minority of bridge-biased walkers onto quad-adjacent paths.
+  const quad = (data.landmarks || []).find((landmark) => landmark.id === 'quad');
+  if (quad && pedSegments.length) {
+    const nearQuad = pedSegments.filter((segment) => {
+      const mx = (segment.a[0] + segment.b[0]) * 0.5;
+      const mz = (segment.a[1] + segment.b[1]) * 0.5;
+      return Math.hypot(mx - quad.x, mz - quad.z) < 95 && !segment.bridge;
+    });
+    const fromBridge = pedAgents.filter((agent) => agent.s.bridge);
+    const quota = Math.min(12, nearQuad.length, Math.max(0, fromBridge.length - 8));
+    for (let i = 0; i < quota; i++) {
+      const agent = fromBridge[i];
+      const segment = nearQuad[(i * 5) % nearQuad.length];
+      agent.s = segment;
+      agent.d = (0.17 * i) % 1;
+    }
+  }
   return {
     carSegments,
     pedSegments,
